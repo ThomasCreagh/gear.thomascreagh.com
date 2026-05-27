@@ -13,7 +13,7 @@ class User(Base):
     is_admin = Column(Boolean, default=False)
     is_approved = Column(Boolean, default=False)
     is_locked = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     loans = relationship("Loan", back_populates="user")
     audit_logs = relationship("AuditLog", back_populates="user")
