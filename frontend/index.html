@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gear — Login</title>
+  <link rel="stylesheet" href="static/style.css">
+</head>
+<body>
+<div class="login-wrap">
+  <div class="login-box">
+    <h1>⛺ Gear</h1>
+    <p>gear.thomascreagh.com</p>
+    <div class="alert alert-error" id="error"></div>
+    <div class="form-group">
+      <label>Email</label>
+      <input type="email" id="email" placeholder="you@example.com" autocomplete="email">
+    </div>
+    <div class="form-group">
+      <label>Password</label>
+      <input type="password" id="password" placeholder="••••••••" autocomplete="current-password">
+    </div>
+    <button class="btn btn-primary" style="width:100%" onclick="doLogin()">Login</button>
+    <p style="margin-top:1rem; text-align:center; font-size:0.8rem; color:var(--muted)">
+      No account? Contact Tom in person with your TCD card.
+    </p>
+  </div>
+</div>
+<script src="static/api.js"></script>
+<script>
+  // Redirect if already logged in
+  if (getToken()) window.location.href = "/gear.html";
+
+  document.getElementById("password").addEventListener("keypress", e => {
+    if (e.key === "Enter") doLogin();
+  });
+
+  async function doLogin() {
+    const email = document.getElementById("email").value.trim();
+    const password = document.getElementById("password").value;
+    const err = document.getElementById("error");
+    err.style.display = "none";
+
+    if (!email || !password) return showError(err, "Please enter email and password.");
+
+    try {
+      await login(email, password);
+      const me = await getMe();
+      window.location.href = me.is_admin ? "/admin.html" : "/gear.html";
+    } catch (e) {
+      showError(err, e.message);
+    }
+  }
+</script>
+</body>
+</html>

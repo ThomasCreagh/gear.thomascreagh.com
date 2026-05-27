@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gear — Browse</title>
+  <link rel="stylesheet" href="static/style.css">
+</head>
+<body>
+<nav>
+  <span class="logo">⛺ Gear</span>
+  <div>
+    <a href="gear.html">Browse</a>
+    <a href="return.html">Return</a>
+    <a href="#" onclick="logout()">Logout</a>
+  </div>
+</nav>
+
+<div class="container">
+  <h1>Available Gear</h1>
+  <div class="alert alert-error" id="error"></div>
+  <div class="alert alert-success" id="success"></div>
+
+  <div class="card" id="not-approved" style="display:none; background:#fff3cd; border:1px solid #f39c12">
+    <h2>⏳ Account Pending Approval</h2>
+    <p>Your account is waiting for Tom to approve it. You'll receive an email once approved.</p>
+  </div>
+
+  <div id="main" style="display:none">
+    <div class="grid" id="items-grid"></div>
+
+    <div class="card" style="margin-top:1.5rem">
+      <h2>Request Borrow</h2>
+      <p style="font-size:0.85rem;color:var(--muted);margin-bottom:1rem">Select items above, then choose duration.</p>
+      <div class="form-group">
+        <label>Days (max <span id="max-days">14</span>)</label>
+        <input type="number" id="days" min="1" max="14" value="3" style="width:120px">
+      </div>
+      <button class="btn btn-primary" onclick="requestBorrow()">Request Borrow</button>
+    </div>
+
+    <div class="card" id="active-loans-card" style="margin-top:1.5rem;display:none">
+      <h2>My Active Loans</h2>
+      <table>
+        <thead><tr><th>Items</th><th>Due Date</th><th>Status</th><th>Photo</th></tr></thead>
+        <tbody id="loans-table"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script src="static/api.js"></script>
+<script>
+  requireAuth();
+  let me, items = [];
+
+  async function init() {
+    try {
+      me = await getMe();
+      if (!me.is_approved) {
+        document.getElementById("not-approved").style.display = "block";
+        return;
+      }
+      if (me.is_locked) {
+        showError(document.getElementById("error"), "Your account is locked due to overdue items. Contact Tom.");
+      }
+      document.getElementById("main").style.display = "block";
+      await loadItems();
+      await loadMyLoans();
+    } catch (e) {
+      showError(document.getElementById("error"), e.message);
+    }
+  }
+
+  async function loadItems() {
+    items = await apiFetch("/items");
+    const grid = document.getElementById("items-grid");
+    grid.innerHTML = items.map(item => `
+      <div class="item-card">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <h3>${item.name}</h3>
+          <span class="badge ${item.available ? 'badge-green' : 'badge-red'}">${item.available ? 'Available' : 'Out'}</span>
+        </div>
+        <p>${item.description || ''}</p>
+        ${item.available ? `<label><input type="checkbox" value="${item.id}" class="item-check"> Add to request</label>` : ''}
+      </div>
+    `).join("");
+  }
+
+  async function loadMyLoans() {
+    const loans = await apiFetch("/loans/my");
+    const active = loans.filter(l => !l.returned);
+    if (!active.length) return;
+
+    document.getElementById("active-loans-card").style.display = "block";
+    const tbody = document.getElementById("loans-table");
+    tbody.innerHTML = active.map(loan => {
+      const names = loan.item_ids.map(id => {
+        const item = items.find(i => i.id === id);
+        return item ? item.name : `#${id}`;
+      }).join(", ");
+      const due = new Date(loan.due_date).toLocaleDateString();
+      const overdue = new Date(loan.due_date) < new Date();
+      return `
+        <tr>
+          <td>${names}</td>
+          <td>${due}</td>
+          <td><span class="badge ${overdue ? 'badge-red' : 'badge-green'}">${overdue ? 'Overdue' : 'Active'}</span></td>
+          <td>${!loan.borrow_photo
+            ? `<label class="btn btn-sm btn-secondary" style="cursor:pointer">Upload <input type="file" accept="image/*" style="display:none" onchange="uploadBorrowPhoto(${loan.id}, this)"></label>`
+            : '<span class="badge badge-green">✓ Done</span>'
+          }</td>
+        </tr>
+      `;
+    }).join("");
+  }
+
+  async function requestBorrow() {
+    const checked = [...document.querySelectorAll(".item-check:checked")].map(el => parseInt(el.value));
+    const days = parseInt(document.getElementById("days").value);
+    const err = document.getElementById("error");
+    const suc = document.getElementById("success");
+    err.style.display = "none";
+    suc.style.display = "none";
+
+    if (!checked.length) return showError(err, "Select at least one item.");
+    if (!days || days < 1) return showError(err, "Enter valid number of days.");
+
+    try {
+      const loan = await apiFetch("/loans", {
+        method: "POST",
+        body: JSON.stringify({ item_ids: checked, days })
+      });
+      suc.textContent = `✓ Approved! Locker code: ${loan.locker_code}. Due: ${new Date(loan.due_date).toLocaleDateString()}. Check your email.`;
+      suc.style.display = "block";
+      await loadItems();
+      await loadMyLoans();
+    } catch (e) {
+      showError(err, e.message);
+    }
+  }
+
+  async function uploadBorrowPhoto(loanId, input) {
+    const file = input.files[0];
+    if (!file) return;
+    const fd = new FormData();
+    fd.append("photo", file);
+    try {
+      await apiFetch(`/loans/${loanId}/borrow-photo`, { method: "POST", body: fd });
+      document.getElementById("success").textContent = "✓ Borrow photo uploaded.";
+      document.getElementById("success").style.display = "block";
+      await loadMyLoans();
+    } catch (e) {
+      showError(document.getElementById("error"), e.message);
+    }
+  }
+
+  init();
+</script>
+</body>
+</html>

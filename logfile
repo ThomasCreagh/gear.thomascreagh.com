@@ -1,0 +1,44 @@
+2026-05-27 22:55:13.239 IST [88125] LOG:  starting PostgreSQL 17.10 on x86_64-pc-linux-gnu, compiled by clang version 21.1.8, 64-bit
+2026-05-27 22:55:13.239 IST [88125] LOG:  listening on IPv6 address "::1", port 5432
+2026-05-27 22:55:13.239 IST [88125] LOG:  listening on IPv4 address "127.0.0.1", port 5432
+2026-05-27 22:55:13.240 IST [88125] FATAL:  could not create lock file "/run/postgresql/.s.PGSQL.5432.lock": No such file or directory
+2026-05-27 22:55:13.242 IST [88125] LOG:  database system is shut down
+2026-05-27 22:57:28.154 IST [90045] LOG:  starting PostgreSQL 17.10 on x86_64-pc-linux-gnu, compiled by clang version 21.1.8, 64-bit
+2026-05-27 22:57:28.155 IST [90045] LOG:  listening on IPv6 address "::1", port 5432
+2026-05-27 22:57:28.155 IST [90045] LOG:  listening on IPv4 address "127.0.0.1", port 5432
+2026-05-27 22:57:28.155 IST [90045] FATAL:  could not create lock file "/run/postgresql/.s.PGSQL.5432.lock": No such file or directory
+2026-05-27 22:57:28.157 IST [90045] LOG:  database system is shut down
+2026-05-27 22:58:26.548 IST [90857] LOG:  starting PostgreSQL 17.10 on x86_64-pc-linux-gnu, compiled by clang version 21.1.8, 64-bit
+2026-05-27 22:58:26.548 IST [90857] LOG:  listening on IPv6 address "::1", port 5432
+2026-05-27 22:58:26.548 IST [90857] LOG:  listening on IPv4 address "127.0.0.1", port 5432
+2026-05-27 22:58:26.549 IST [90857] LOG:  listening on Unix socket "/home/tom/.local/run/postgres/.s.PGSQL.5432"
+2026-05-27 22:58:26.552 IST [90860] LOG:  database system was shut down at 2026-05-27 22:54:59 IST
+2026-05-27 22:58:26.555 IST [90857] LOG:  database system is ready to accept connections
+2026-05-27 23:00:59.685 IST [90857] LOG:  received fast shutdown request
+2026-05-27 23:00:59.686 IST [90857] LOG:  aborting any active transactions
+2026-05-27 23:00:59.688 IST [90857] LOG:  background worker "logical replication launcher" (PID 90863) exited with exit code 1
+2026-05-27 23:00:59.688 IST [90858] LOG:  shutting down
+2026-05-27 23:00:59.688 IST [90858] LOG:  checkpoint starting: shutdown immediate
+2026-05-27 23:00:59.694 IST [90858] LOG:  checkpoint complete: wrote 48 buffers (0.3%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.002 s, sync=0.002 s, total=0.007 s; sync files=11, longest=0.001 s, average=0.001 s; distance=290 kB, estimate=290 kB; lsn=0/15925A0, redo lsn=0/15925A0
+2026-05-27 23:00:59.700 IST [90857] LOG:  database system is shut down
+2026-05-27 23:00:59.820 IST [93002] LOG:  starting PostgreSQL 17.10 on x86_64-pc-linux-gnu, compiled by clang version 21.1.8, 64-bit
+2026-05-27 23:00:59.820 IST [93002] LOG:  listening on IPv6 address "::1", port 5432
+2026-05-27 23:00:59.820 IST [93002] LOG:  listening on IPv4 address "127.0.0.1", port 5432
+2026-05-27 23:00:59.821 IST [93002] LOG:  listening on Unix socket "/run/postgresql/.s.PGSQL.5432"
+2026-05-27 23:00:59.823 IST [93005] LOG:  database system was shut down at 2026-05-27 23:00:59 IST
+2026-05-27 23:00:59.826 IST [93002] LOG:  database system is ready to accept connections
+2026-05-27 23:01:44.438 IST [93633] FATAL:  database "tom" does not exist
+2026-05-27 23:02:17.120 IST [93898] ERROR:  syntax error at or near "CREATE" at character 47
+2026-05-27 23:02:17.120 IST [93898] STATEMENT:  CREATE USER gearuser WITH PASSWORD 'gearpass'
+	CREATE DATABASE gear OWNER gearuser;
+2026-05-27 23:04:01.236 IST [95541] FATAL:  role "gearuser" does not exist
+2026-05-27 23:05:05.791 IST [96432] FATAL:  database "tom" does not exist
+2026-05-27 23:05:59.923 IST [93003] LOG:  checkpoint starting: time
+2026-05-27 23:05:59.928 IST [93003] LOG:  checkpoint complete: wrote 3 buffers (0.0%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.002 s, sync=0.001 s, total=0.005 s; sync files=2, longest=0.001 s, average=0.001 s; distance=0 kB, estimate=0 kB; lsn=0/15926A8, redo lsn=0/1592650
+2026-05-27 23:07:52.868 IST [93002] LOG:  received fast shutdown request
+2026-05-27 23:07:52.869 IST [93002] LOG:  aborting any active transactions
+2026-05-27 23:07:52.871 IST [93002] LOG:  background worker "logical replication launcher" (PID 93008) exited with exit code 1
+2026-05-27 23:07:52.871 IST [93003] LOG:  shutting down
+2026-05-27 23:07:52.872 IST [93003] LOG:  checkpoint starting: shutdown immediate
+2026-05-27 23:07:52.875 IST [93003] LOG:  checkpoint complete: wrote 0 buffers (0.0%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.001 s, sync=0.001 s, total=0.004 s; sync files=0, longest=0.000 s, average=0.000 s; distance=0 kB, estimate=0 kB; lsn=0/1592758, redo lsn=0/1592758
+2026-05-27 23:07:52.880 IST [93002] LOG:  database system is shut down

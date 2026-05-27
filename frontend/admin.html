@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gear — Admin</title>
+  <link rel="stylesheet" href="static/style.css">
+</head>
+<body>
+<nav>
+  <span class="logo">⛺ Gear Admin</span>
+  <div>
+    <a href="gear.html">Browse</a>
+    <a href="#" onclick="logout()">Logout</a>
+  </div>
+</nav>
+
+<div class="container">
+  <div class="tabs">
+    <button class="tab active" onclick="showTab('users')">Users</button>
+    <button class="tab" onclick="showTab('items')">Gear</button>
+    <button class="tab" onclick="showTab('loans')">Loans</button>
+    <button class="tab" onclick="showTab('stock')">Stock Check</button>
+    <button class="tab" onclick="showTab('locker')">Locker Code</button>
+    <button class="tab" onclick="showTab('audit')">Audit Log</button>
+  </div>
+
+  <div class="alert alert-error" id="error"></div>
+  <div class="alert alert-success" id="success"></div>
+
+  <!-- USERS -->
+  <div class="section active" id="tab-users">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+      <h1>Users</h1>
+      <button class="btn btn-primary" onclick="showCreateUser()">+ Create User</button>
+    </div>
+    <div class="card" id="create-user-form" style="display:none;margin-bottom:1rem">
+      <h2>Create User</h2>
+      <label>Email</label>
+      <input type="email" id="new-email" placeholder="user@tcd.ie">
+      <button class="btn btn-primary" onclick="createUser()">Create & Send Credentials</button>
+    </div>
+    <div class="card">
+      <table>
+        <thead><tr><th>Email</th><th>Approved</th><th>Locked</th><th>Actions</th></tr></thead>
+        <tbody id="users-table"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ITEMS -->
+  <div class="section" id="tab-items">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+      <h1>Gear Items</h1>
+      <button class="btn btn-primary" onclick="showCreateItem()">+ Add Item</button>
+    </div>
+    <div class="card" id="create-item-form" style="display:none;margin-bottom:1rem">
+      <h2>Add Item</h2>
+      <label>Name</label>
+      <input type="text" id="new-item-name" placeholder="Tent, Sleeping Bag...">
+      <label>Description</label>
+      <input type="text" id="new-item-desc" placeholder="Optional">
+      <button class="btn btn-primary" onclick="createItem()">Add</button>
+    </div>
+    <div class="card">
+      <table>
+        <thead><tr><th>Name</th><th>Description</th><th>Available</th><th>Actions</th></tr></thead>
+        <tbody id="items-table"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- LOANS -->
+  <div class="section" id="tab-loans">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+      <h1>Active Loans</h1>
+      <button class="btn btn-secondary" onclick="checkOverdue()">Check Overdue</button>
+    </div>
+    <div class="card">
+      <table>
+        <thead><tr><th>User</th><th>Items</th><th>Due</th><th>Status</th><th>Photos</th></tr></thead>
+        <tbody id="loans-table"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- STOCK CHECK -->
+  <div class="section" id="tab-stock">
+    <h1>Weekly Stock Check</h1>
+    <div class="card">
+      <p style="margin-bottom:1rem;color:var(--muted);font-size:0.9rem">Check each item against physical inventory.</p>
+      <div id="stock-list"></div>
+      <button class="btn btn-primary" onclick="submitStock()" style="margin-top:1rem">Submit Stock Check</button>
+    </div>
+  </div>
+
+  <!-- LOCKER CODE -->
+  <div class="section" id="tab-locker">
+    <h1>Locker Code</h1>
+    <div class="card">
+      <p style="margin-bottom:1rem;color:var(--muted);font-size:0.9rem">Update weekly. This code is issued to all approved borrow requests.</p>
+      <div id="current-code" style="font-size:2rem;font-weight:700;text-align:center;padding:1rem;background:var(--bg);border-radius:var(--radius);margin-bottom:1rem;letter-spacing:0.2em"></div>
+      <label>New Code</label>
+      <input type="text" id="new-code" placeholder="e.g. 4821" style="width:200px">
+      <button class="btn btn-primary" onclick="updateLockerCode()">Update Code</button>
+    </div>
+  </div>
+
+  <!-- AUDIT LOG -->
+  <div class="section" id="tab-audit">
+    <h1>Audit Log</h1>
+    <div class="card">
+      <table>
+        <thead><tr><th>Time</th><th>User</th><th>Action</th><th>Details</th></tr></thead>
+        <tbody id="audit-table"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script src="static/api.js"></script>
+<script>
+  let allUsers = [], allItems = [], allLoans = [];
+
+  async function init() {
+    await requireAdmin();
+    await Promise.all([loadUsers(), loadItems(), loadLoans()]);
+    loadLockerCode();
+    loadAudit();
+  }
+
+  function showTab(name) {
+    document.querySelectorAll(".section").forEach(s => s.classList.remove("active"));
+    document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+    document.getElementById(`tab-${name}`).classList.add("active");
+    event.target.classList.add("active");
+    if (name === "stock") buildStockList();
+  }
+
+  async function loadUsers() {
+    allUsers = await apiFetch("/admin/users");
+    const tbody = document.getElementById("users-table");
+    tbody.innerHTML = allUsers.map(u => `
+      <tr>
+        <td>${u.email}</td>
+        <td><span class="badge ${u.is_approved ? 'badge-green' : 'badge-yellow'}">${u.is_approved ? 'Yes' : 'Pending'}</span></td>
+        <td><span class="badge ${u.is_locked ? 'badge-red' : 'badge-gray'}">${u.is_locked ? 'Locked' : 'OK'}</span></td>
+        <td style="display:flex;gap:0.5rem;flex-wrap:wrap">
+          ${!u.is_approved ? `<button class="btn btn-sm btn-success" onclick="approveUser(${u.id})">Approve</button>` : ''}
+          <button class="btn btn-sm ${u.is_locked ? 'btn-success' : 'btn-danger'}" onclick="toggleLock(${u.id})">${u.is_locked ? 'Unlock' : 'Lock'}</button>
+          <button class="btn btn-sm btn-secondary" onclick="resetPw(${u.id})">Reset PW</button>
+        </td>
+      </tr>
+    `).join("");
+  }
+
+  async function loadItems() {
+    allItems = await apiFetch("/items");
+    const tbody = document.getElementById("items-table");
+    tbody.innerHTML = allItems.map(i => `
+      <tr>
+        <td>${i.name}</td>
+        <td>${i.description || '-'}</td>
+        <td><span class="badge ${i.available ? 'badge-green' : 'badge-red'}">${i.available ? 'Yes' : 'No'}</span></td>
+        <td>
+          <button class="btn btn-sm btn-secondary" onclick="toggleItem(${i.id}, ${!i.available})">${i.available ? 'Mark Out' : 'Mark In'}</button>
+          <button class="btn btn-sm btn-danger" onclick="deleteItem(${i.id})" style="margin-left:0.3rem">Delete</button>
+        </td>
+      </tr>
+    `).join("");
+  }
+
+  async function loadLoans() {
+    allLoans = await apiFetch("/admin/loans?active_only=true");
+    const tbody = document.getElementById("loans-table");
+    tbody.innerHTML = allLoans.filter(l => !l.returned).map(loan => {
+      const user = allUsers.find(u => u.id === loan.user_id);
+      const names = loan.item_ids.map(id => {
+        const item = allItems.find(i => i.id === id);
+        return item ? item.name : `#${id}`;
+      }).join(", ");
+      const due = new Date(loan.due_date).toLocaleDateString();
+      const overdue = new Date(loan.due_date) < new Date();
+      return `
+        <tr>
+          <td>${user ? user.email : loan.user_id}</td>
+          <td>${names}</td>
+          <td>${due}</td>
+          <td><span class="badge ${overdue ? 'badge-red' : 'badge-green'}">${overdue ? 'Overdue' : 'Active'}</span></td>
+          <td>
+            ${loan.borrow_photo ? `<a href="http://localhost:8000/${loan.borrow_photo}" target="_blank" class="badge badge-green">Borrow ✓</a>` : '<span class="badge badge-red">No borrow</span>'}
+          </td>
+        </tr>
+      `;
+    }).join("");
+  }
+
+  async function loadLockerCode() {
+    const data = await apiFetch("/admin/locker-code");
+    document.getElementById("current-code").textContent = data.code || "Not set";
+  }
+
+  async function loadAudit() {
+    const logs = await apiFetch("/admin/audit-log");
+    const tbody = document.getElementById("audit-table");
+    tbody.innerHTML = logs.map(l => `
+      <tr>
+        <td style="white-space:nowrap;font-size:0.8rem">${new Date(l.timestamp).toLocaleString()}</td>
+        <td>${allUsers.find(u => u.id === l.user_id)?.email || l.user_id}</td>
+        <td><code>${l.action}</code></td>
+        <td style="font-size:0.8rem;color:var(--muted)">${l.details || ''}</td>
+      </tr>
+    `).join("");
+  }
+
+  function buildStockList() {
+    const container = document.getElementById("stock-list");
+    container.innerHTML = allItems.map(item => `
+      <div style="display:flex;align-items:center;gap:1rem;padding:0.5rem 0;border-bottom:1px solid var(--border)">
+        <label style="flex:1;font-weight:600">${item.name}</label>
+        <span class="badge ${item.available ? 'badge-green' : 'badge-red'}" style="min-width:60px">Expected: ${item.available ? 'In' : 'Out'}</span>
+        <label><input type="checkbox" id="stock-${item.id}" ${item.available ? 'checked' : ''}> Present</label>
+        <input type="text" placeholder="Notes" id="notes-${item.id}" style="width:150px;margin:0">
+      </div>
+    `).join("");
+  }
+
+  async function submitStock() {
+    const items = allItems.map(item => ({
+      item_id: item.id,
+      present: document.getElementById(`stock-${item.id}`).checked,
+      notes: document.getElementById(`notes-${item.id}`).value
+    }));
+    try {
+      const result = await apiFetch("/admin/stock-check", {
+        method: "POST",
+        body: JSON.stringify({ items })
+      });
+      const suc = document.getElementById("success");
+      suc.textContent = `✓ Stock check done. ${result.discrepancies.length} discrepancy(s) found.`;
+      suc.style.display = "block";
+      if (result.discrepancies.length) {
+        suc.textContent += " Discrepancies: " + result.discrepancies.map(d => d.name).join(", ");
+      }
+    } catch (e) {
+      showError(document.getElementById("error"), e.message);
+    }
+  }
+
+  async function updateLockerCode() {
+    const code = document.getElementById("new-code").value.trim();
+    if (!code) return showError(document.getElementById("error"), "Enter a code.");
+    try {
+      await apiFetch("/admin/locker-code", { method: "POST", body: JSON.stringify({ code }) });
+      document.getElementById("success").textContent = "✓ Locker code updated.";
+      document.getElementById("success").style.display = "block";
+      loadLockerCode();
+    } catch (e) {
+      showError(document.getElementById("error"), e.message);
+    }
+  }
+
+  function showCreateUser() {
+    const f = document.getElementById("create-user-form");
+    f.style.display = f.style.display === "none" ? "block" : "none";
+  }
+
+  function showCreateItem() {
+    const f = document.getElementById("create-item-form");
+    f.style.display = f.style.display === "none" ? "block" : "none";
+  }
+
+  async function createUser() {
+    const email = document.getElementById("new-email").value.trim();
+    if (!email) return;
+    try {
+      await apiFetch(`/admin/users?email=${encodeURIComponent(email)}`, { method: "POST" });
+      document.getElementById("success").textContent = `✓ User created. Credentials sent to ${email}.`;
+      document.getElementById("success").style.display = "block";
+      document.getElementById("create-user-form").style.display = "none";
+      await loadUsers();
+    } catch (e) {
+      showError(document.getElementById("error"), e.message);
+    }
+  }
+
+  async function createItem() {
+    const name = document.getElementById("new-item-name").value.trim();
+    const description = document.getElementById("new-item-desc").value.trim();
+    if (!name) return;
+    try {
+      await apiFetch("/items", { method: "POST", body: JSON.stringify({ name, description }) });
+      document.getElementById("success").textContent = "✓ Item added.";
+      document.getElementById("success").style.display = "block";
+      document.getElementById("create-item-form").style.display = "none";
+      await loadItems();
+    } catch (e) {
+      showError(document.getElementById("error"), e.message);
+    }
+  }
+
+  async function approveUser(id) {
+    await apiFetch(`/admin/users/${id}/approve`, { method: "POST" });
+    await loadUsers();
+  }
+
+  async function toggleLock(id) {
+    await apiFetch(`/admin/users/${id}/lock`, { method: "POST" });
+    await loadUsers();
+  }
+
+  async function resetPw(id) {
+    if (!confirm("Reset this user's password and send email?")) return;
+    await apiFetch(`/admin/users/${id}/reset-password`, { method: "POST" });
+    document.getElementById("success").textContent = "✓ Password reset, email sent.";
+    document.getElementById("success").style.display = "block";
+  }
+
+  async function toggleItem(id, available) {
+    await apiFetch(`/items/${id}`, { method: "PUT", body: JSON.stringify({ available }) });
+    await loadItems();
+  }
+
+  async function deleteItem(id) {
+    if (!confirm("Delete this item?")) return;
+    await apiFetch(`/items/${id}`, { method: "DELETE" });
+    await loadItems();
+  }
+
+  async function checkOverdue() {
+    const result = await apiFetch("/admin/check-overdue", { method: "POST" });
+    const suc = document.getElementById("success");
+    suc.textContent = result.locked_users.length
+      ? `⚠️ Locked ${result.locked_users.length} user(s): ${result.locked_users.join(", ")}`
+      : "✓ No overdue loans found.";
+    suc.style.display = "block";
+    await loadUsers();
+  }
+
+  init();
+</script>
+</body>
+</html>

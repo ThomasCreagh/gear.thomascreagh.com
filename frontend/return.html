@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gear — Return</title>
+  <link rel="stylesheet" href="static/style.css">
+</head>
+<body>
+<nav>
+  <span class="logo">⛺ Gear</span>
+  <div>
+    <a href="gear.html">Browse</a>
+    <a href="return.html">Return</a>
+    <a href="#" onclick="logout()">Logout</a>
+  </div>
+</nav>
+
+<div class="container">
+  <h1>Return Gear</h1>
+  <div class="alert alert-error" id="error"></div>
+  <div class="alert alert-success" id="success"></div>
+  <div id="loans-list"></div>
+</div>
+
+<script src="static/api.js"></script>
+<script>
+  requireAuth();
+
+  async function init() {
+    try {
+      const [loans, items] = await Promise.all([apiFetch("/loans/my"), apiFetch("/items")]);
+      const active = loans.filter(l => !l.returned);
+      const container = document.getElementById("loans-list");
+
+      if (!active.length) {
+        container.innerHTML = `<div class="card"><p style="color:var(--muted);text-align:center">No active loans to return.</p></div>`;
+        return;
+      }
+
+      container.innerHTML = active.map(loan => {
+        const names = loan.item_ids.map(id => {
+          const item = items.find(i => i.id === id);
+          return item ? item.name : `#${id}`;
+        });
+        const due = new Date(loan.due_date).toLocaleDateString();
+        const overdue = new Date(loan.due_date) < new Date();
+        return `
+          <div class="card">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+              <div>
+                <h2>Loan #${loan.id}</h2>
+                <p style="font-size:0.85rem;color:var(--muted)">Due: ${due} ${overdue ? '⚠️ Overdue' : ''}</p>
+              </div>
+              <span class="badge ${overdue ? 'badge-red' : 'badge-green'}">${overdue ? 'Overdue' : 'Active'}</span>
+            </div>
+            <p style="margin-bottom:1rem"><strong>Items:</strong> ${names.join(", ")}</p>
+            <div style="margin-bottom:1rem">
+              <label>Photo of returned locker (required)</label>
+              <input type="file" accept="image/*" id="photo-${loan.id}">
+            </div>
+            <button class="btn btn-success" onclick="returnLoan(${loan.id})">Confirm Return</button>
+          </div>
+        `;
+      }).join("");
+    } catch (e) {
+      showError(document.getElementById("error"), e.message);
+    }
+  }
+
+  async function returnLoan(loanId) {
+    const fileInput = document.getElementById(`photo-${loanId}`);
+    const err = document.getElementById("error");
+    const suc = document.getElementById("success");
+    err.style.display = "none";
+    suc.style.display = "none";
+
+    if (!fileInput.files[0]) return showError(err, "Please take and upload a photo of the locker.");
+
+    const fd = new FormData();
+    fd.append("photo", fileInput.files[0]);
+
+    try {
+      const result = await apiFetch(`/loans/${loanId}/return`, { method: "POST", body: fd });
+      suc.textContent = `✓ Return logged at ${new Date(result.returned_at).toLocaleString()}. Thank you!`;
+      suc.style.display = "block";
+      await init();
+    } catch (e) {
+      showError(err, e.message);
+    }
+  }
+
+  init();
+</script>
+</body>
+</html>
