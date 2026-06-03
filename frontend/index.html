@@ -20,7 +20,7 @@
       <label>Password</label>
       <input type="password" id="password" placeholder="••••••••" autocomplete="current-password">
     </div>
-    <button class="btn btn-primary" style="width:100%" onclick="doLogin()">Login</button>
+    <button type="button" class="btn btn-primary" style="width:100%" onclick="doLogin()">Login</button>
     <p style="margin-top:1rem; text-align:center; font-size:0.8rem; color:var(--muted)">
       No account? Contact Tom in person with your TCD card.
     </p>
@@ -40,6 +40,9 @@
     const password = document.getElementById("password").value;
     const err = document.getElementById("error");
     err.style.display = "none";
+
+    console.log("doLogin() called");
+    console.log("Sending:", { email, password: "***" });
 
     if (!email || !password) return showError(err, "Please enter email and password.");
 

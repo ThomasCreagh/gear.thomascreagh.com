@@ -1,4 +1,4 @@
-const API_BASE = "http://localhost:8000";
+const API_BASE = "";
 
 function getToken() {
   return localStorage.getItem("token");
@@ -32,9 +32,11 @@ async function apiFetch(path, options = {}) {
 }
 
 async function login(email, password) {
+  const body = JSON.stringify({ email, password });
+  console.log("login() fetch body:", body);
   const data = await apiFetch("/auth/login", {
     method: "POST",
-    body: JSON.stringify({ email, password }),
+    body,
   });
   setToken(data.access_token);
   return data;

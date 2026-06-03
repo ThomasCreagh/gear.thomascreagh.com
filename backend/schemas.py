@@ -21,7 +21,7 @@ class UserOut(BaseModel):
     is_admin: bool
     is_approved: bool
     is_locked: bool
-    created_at: datetime
+    created_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
@@ -62,7 +62,7 @@ class LoanOut(BaseModel):
     locker_code: Optional[str]
     due_date: Optional[datetime]
     returned: bool
-    created_at: datetime
+    created_at: Optional[datetime] = None
     returned_at: Optional[datetime]
 
     class Config:

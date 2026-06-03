@@ -1,36 +1,33 @@
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
-# from datetime import timedelta
+from datetime import timedelta
 
 from database import get_db
 import models
 import schemas
-from auth import (
-    verify_password,
-    create_access_token,
-    get_current_user,
-    hash_password
-)
+from auth import verify_password, create_access_token, get_current_user, hash_password
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/login", response_model=schemas.TokenResponse)
-def login(
-    form_data: OAuth2PasswordRequestForm = Depends(),
-    db: Session = Depends(get_db)
-):
+def login(request: schemas.LoginRequest, db: Session = Depends(get_db)):
+    # Accepts JSON: {"email": "...", "password": "..."}
     user = db.query(models.User).filter(
-        models.User.email == form_data.username
-    ).first()
-
-    if not user or not verify_password(form_data.password, user.password_hash):
+        models.User.email == request.email).first()
+    if not user or not verify_password(request.password, user.password_hash):
         raise HTTPException(
             status_code=401, detail="Invalid email or password")
 
-    token = create_access_token({"sub": user.id})
-    return {"access_token": token, "token_type": "bearer"}
+    token = create_access_token({"sub": str(user.id)})
+
+    # Audit log
+    log = models.AuditLog(user_id=user.id, action="login",
+                          details=f"Login from {request.email}")
+    db.add(log)
+    db.commit()
+
+    return {"access_token": token}
 
 
 @router.get("/me", response_model=schemas.UserOut)
