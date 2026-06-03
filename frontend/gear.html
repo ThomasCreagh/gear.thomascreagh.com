@@ -82,6 +82,10 @@
           <span class="badge ${item.available ? 'badge-green' : 'badge-red'}">${item.available ? 'Available' : 'Out'}</span>
         </div>
         <p>${item.description || ''}</p>
+        <div style="display:flex;gap:0.5rem;font-size:0.8rem">
+          ${item.tag ? `<span class="badge badge-gray">Tag #${item.tag}</span>` : ''}
+          ${item.locker ? `<span class="badge badge-gray">${item.locker} locker</span>` : ''}
+        </div>
         ${item.available ? `<label><input type="checkbox" value="${item.id}" class="item-check"> Add to request</label>` : ''}
       </div>
     `).join("");

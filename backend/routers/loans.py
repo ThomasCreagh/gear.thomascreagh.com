@@ -9,8 +9,8 @@ import uuid
 from database import get_db
 import models
 import schemas
-from auth import get_approved_user, get_admin_user
-from email_service import send_loan_approved
+from auth import get_approved_user
+from mailer import send_loan_approved
 
 router = APIRouter(prefix="/loans", tags=["loans"])
 
@@ -28,9 +28,13 @@ def save_photo(file: UploadFile) -> str:
     return path
 
 
-def get_locker_code(db: Session) -> str:
-    code = db.query(models.LockerCode).order_by(
-        models.LockerCode.id.desc()).first()
+def get_locker_code(db: Session, locker: str) -> str:
+    code = (
+        db.query(models.LockerCode)
+        .filter(models.LockerCode.locker == locker)
+        .order_by(models.LockerCode.id.desc())
+        .first()
+    )
     return code.code if code else "0000"
 
 
@@ -44,43 +48,47 @@ def create_loan(
         raise HTTPException(
             status_code=400, detail=f"Days must be 1-{MAX_LOAN_DAYS}")
 
-    # Check items available
+    # Validate all items available
+    items = []
     for item_id in loan.item_ids:
-        item = db.query(models.Item).filter(models.Item.id == (
-            item_id, models.Item.available is True).first())
+        item = db.query(models.Item).filter(
+            models.Item.id == item_id,
+            models.Item.available == True
+        ).first()
         if not item:
             raise HTTPException(status_code=400, detail=f"Item {
                                 item_id} not available")
+        items.append(item)
 
-    locker_code = get_locker_code(db)
+    # Determine locker from first item (items in same locker assumed)
+    locker = items[0].locker or "upper"
+    locker_code = get_locker_code(db, locker)
     due_date = datetime.utcnow() + timedelta(days=loan.days)
 
     db_loan = models.Loan(
         user_id=current_user.id,
         item_ids=loan.item_ids,
         locker_code=locker_code,
+        locker=locker,
         due_date=due_date
     )
     db.add(db_loan)
 
-    # Mark items unavailable
-    for item_id in loan.item_ids:
-        item = db.query(models.Item).filter(models.Item.id == item_id).first()
+    for item in items:
         item.available = False
 
     log = models.AuditLog(
         user_id=current_user.id,
         action="loan_created",
-        details=f"Items: {loan.item_ids}, due: {due_date}"
+        details=f"Items: {loan.item_ids}, locker: {locker}, due: {due_date}"
     )
     db.add(log)
     db.commit()
     db.refresh(db_loan)
 
-    # Send email
-    items = [db.query(models.Item).get(i).name for i in loan.item_ids]
+    item_names = [i.name for i in items]
     send_loan_approved(current_user.email, locker_code,
-                       due_date.strftime("%Y-%m-%d"), items)
+                       due_date.strftime("%Y-%m-%d"), item_names)
 
     return db_loan
 
@@ -93,18 +101,17 @@ def upload_borrow_photo(
     current_user: models.User = Depends(get_approved_user)
 ):
     loan = db.query(models.Loan).filter(
-        models.Loan.id == loan_id, models.Loan.user_id == current_user.id
+        models.Loan.id == loan_id,
+        models.Loan.user_id == current_user.id
     ).first()
     if not loan:
         raise HTTPException(status_code=404, detail="Loan not found")
 
-    path = save_photo(photo)
-    loan.borrow_photo = path
-    log = models.AuditLog(user_id=current_user.id,
-                          action="borrow_photo", details=f"Loan {loan_id}")
-    db.add(log)
+    loan.borrow_photo = save_photo(photo)
+    db.add(models.AuditLog(user_id=current_user.id,
+           action="borrow_photo", details=f"Loan {loan_id}"))
     db.commit()
-    return {"message": "Photo uploaded", "path": path}
+    return {"message": "Photo uploaded"}
 
 
 @router.post("/{loan_id}/return")
@@ -115,30 +122,28 @@ def return_loan(
     current_user: models.User = Depends(get_approved_user)
 ):
     loan = db.query(models.Loan).filter(
-        models.Loan.id == loan_id, models.Loan.user_id == current_user.id
+        models.Loan.id == loan_id,
+        models.Loan.user_id == current_user.id
     ).first()
     if not loan:
         raise HTTPException(status_code=404, detail="Loan not found")
     if loan.returned:
         raise HTTPException(status_code=400, detail="Already returned")
 
-    path = save_photo(photo)
-    loan.return_photo = path
+    loan.return_photo = save_photo(photo)
     loan.returned = True
     loan.returned_at = datetime.utcnow()
 
-    # Mark items available
     for item_id in loan.item_ids:
         item = db.query(models.Item).filter(models.Item.id == item_id).first()
         if item:
             item.available = True
 
-    log = models.AuditLog(
+    db.add(models.AuditLog(
         user_id=current_user.id,
         action="returned",
         details=f"Loan {loan_id}, items: {loan.item_ids}"
-    )
-    db.add(log)
+    ))
     db.commit()
     return {"message": "Return logged", "returned_at": loan.returned_at}
 

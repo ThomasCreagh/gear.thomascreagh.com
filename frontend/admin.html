@@ -60,11 +60,21 @@
       <input type="text" id="new-item-name" placeholder="Tent, Sleeping Bag...">
       <label>Description</label>
       <input type="text" id="new-item-desc" placeholder="Optional">
+      <label>Tag #</label>
+      <input type="number" id="new-item-tag" placeholder="e.g. 42" style="width:120px">
+      <label>Locker</label>
+      <select id="new-item-locker">
+        <option value="">-- Select --</option>
+        <option value="upper">Upper</option>
+        <option value="lower">Lower</option>
+        <option value="outdoor">Outdoor</option>
+        <option value="pad">Pad</option>
+      </select>
       <button class="btn btn-primary" onclick="createItem()">Add</button>
     </div>
     <div class="card">
       <table>
-        <thead><tr><th>Name</th><th>Description</th><th>Available</th><th>Actions</th></tr></thead>
+        <thead><tr><th>Tag</th><th>Name</th><th>Locker</th><th>Description</th><th>Available</th><th>Actions</th></tr></thead>
         <tbody id="items-table"></tbody>
       </table>
     </div>
@@ -96,10 +106,17 @@
 
   <!-- LOCKER CODE -->
   <div class="section" id="tab-locker">
-    <h1>Locker Code</h1>
-    <div class="card">
-      <p style="margin-bottom:1rem;color:var(--muted);font-size:0.9rem">Update weekly. This code is issued to all approved borrow requests.</p>
-      <div id="current-code" style="font-size:2rem;font-weight:700;text-align:center;padding:1rem;background:var(--bg);border-radius:var(--radius);margin-bottom:1rem;letter-spacing:0.2em"></div>
+    <h1>Locker Codes</h1>
+    <div id="locker-codes-grid" class="stat-grid"></div>
+    <div class="card" style="margin-top:1rem">
+      <h2>Update a Code</h2>
+      <label>Locker</label>
+      <select id="new-code-locker" style="width:200px">
+        <option value="upper">Upper</option>
+        <option value="lower">Lower</option>
+        <option value="outdoor">Outdoor</option>
+        <option value="pad">Pad</option>
+      </select>
       <label>New Code</label>
       <input type="text" id="new-code" placeholder="e.g. 4821" style="width:200px">
       <button class="btn btn-primary" onclick="updateLockerCode()">Update Code</button>
@@ -159,7 +176,9 @@
     const tbody = document.getElementById("items-table");
     tbody.innerHTML = allItems.map(i => `
       <tr>
+        <td><span class="badge badge-gray">#${i.tag ?? '—'}</span></td>
         <td>${i.name}</td>
+        <td>${i.locker ? `<span class="badge badge-gray">${i.locker}</span>` : '—'}</td>
         <td>${i.description || '-'}</td>
         <td><span class="badge ${i.available ? 'badge-green' : 'badge-red'}">${i.available ? 'Yes' : 'No'}</span></td>
         <td>
@@ -197,7 +216,14 @@
 
   async function loadLockerCode() {
     const data = await apiFetch("/admin/locker-code");
-    document.getElementById("current-code").textContent = data.code || "Not set";
+    const grid = document.getElementById("locker-codes-grid");
+    grid.innerHTML = Object.entries(data).map(([locker, info]) => `
+      <div class="stat-card">
+        <div class="label" style="text-transform:capitalize">${locker}</div>
+        <div class="num" style="font-size:1.5rem;letter-spacing:0.15em">${info.code || '—'}</div>
+        <div class="label">${info.updated_at ? new Date(info.updated_at).toLocaleDateString() : 'Not set'}</div>
+      </div>
+    `).join("");
   }
 
   async function loadAudit() {
@@ -248,11 +274,12 @@
   }
 
   async function updateLockerCode() {
+    const locker = document.getElementById("new-code-locker").value;
     const code = document.getElementById("new-code").value.trim();
     if (!code) return showError(document.getElementById("error"), "Enter a code.");
     try {
-      await apiFetch("/admin/locker-code", { method: "POST", body: JSON.stringify({ code }) });
-      document.getElementById("success").textContent = "✓ Locker code updated.";
+      await apiFetch("/admin/locker-code", { method: "POST", body: JSON.stringify({ locker, code }) });
+      document.getElementById("success").textContent = `✓ ${locker} locker code updated.`;
       document.getElementById("success").style.display = "block";
       loadLockerCode();
     } catch (e) {
@@ -287,9 +314,11 @@
   async function createItem() {
     const name = document.getElementById("new-item-name").value.trim();
     const description = document.getElementById("new-item-desc").value.trim();
+    const tag = parseInt(document.getElementById("new-item-tag").value) || null;
+    const locker = document.getElementById("new-item-locker").value || null;
     if (!name) return;
     try {
-      await apiFetch("/items", { method: "POST", body: JSON.stringify({ name, description }) });
+      await apiFetch("/items", { method: "POST", body: JSON.stringify({ name, description, tag, locker }) });
       document.getElementById("success").textContent = "✓ Item added.";
       document.getElementById("success").style.display = "block";
       document.getElementById("create-item-form").style.display = "none";

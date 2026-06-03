@@ -7,17 +7,14 @@ from database import get_db
 import models
 import schemas
 from auth import get_admin_user, hash_password
-from email_service import send_account_created, send_overdue_notice
+from mailer import send_account_created, send_overdue_notice
 import secrets
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 
 @router.get("/users", response_model=List[schemas.UserOut])
-def list_users(
-    db: Session = Depends(get_db),
-    admin: models.User = Depends(get_admin_user),
-):
+def list_users(db: Session = Depends(get_db), admin: models.User = Depends(get_admin_user)):
     return db.query(models.User).all()
 
 
@@ -151,20 +148,31 @@ def update_locker_code(
     db: Session = Depends(get_db),
     admin: models.User = Depends(get_admin_user)
 ):
-    code = models.LockerCode(code=update.code, updated_by=admin.id)
+    if update.locker not in ["upper", "lower", "outdoor", "pad"]:
+        raise HTTPException(status_code=400, detail="Invalid locker")
+    code = models.LockerCode(locker=update.locker,
+                             code=update.code, updated_by=admin.id)
     db.add(code)
-    log = models.AuditLog(
-        user_id=admin.id, action="locker_code_updated", details=f"New code set")
-    db.add(log)
+    db.add(models.AuditLog(user_id=admin.id,
+           action="locker_code_updated", details=f"Locker: {update.locker}"))
     db.commit()
-    return {"message": "Locker code updated"}
+    return {"message": f"Code updated for {update.locker}"}
 
 
 @router.get("/locker-code")
-def get_locker_code(db: Session = Depends(get_db), admin: models.User = Depends(get_admin_user)):
-    code = db.query(models.LockerCode).order_by(
-        models.LockerCode.id.desc()).first()
-    return {"code": code.code if code else None, "updated_at": code.updated_at if code else None}
+def get_locker_codes(db: Session = Depends(get_db), admin: models.User = Depends(get_admin_user)):
+    lockers = ["upper", "lower", "outdoor", "pad"]
+    result = {}
+    for locker in lockers:
+        code = (
+            db.query(models.LockerCode)
+            .filter(models.LockerCode.locker == locker)
+            .order_by(models.LockerCode.id.desc())
+            .first()
+        )
+        result[locker] = {"code": code.code if code else None,
+                          "updated_at": code.updated_at if code else None}
+    return result
 
 
 @router.get("/audit-log")
