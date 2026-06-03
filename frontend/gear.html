@@ -5,6 +5,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Gear — Browse</title>
   <link rel="stylesheet" href="static/style.css">
+  <style>
+    .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:100; align-items:center; justify-content:center; }
+    .modal-overlay.open { display:flex; }
+    .modal { background:white; border-radius:var(--radius); padding:2rem; max-width:480px; width:90%; }
+    .warning-box { background:#fff3cd; border:1px solid #f39c12; border-radius:var(--radius); padding:1rem; margin-bottom:1rem; }
+    .warning-box h3 { color:#856404; margin-bottom:0.5rem; }
+    .warning-box p { color:#856404; font-size:0.9rem; }
+    .photo-card { border:2px dashed var(--border); border-radius:var(--radius); padding:1rem; margin-bottom:0.75rem; }
+    .photo-card.done { border-color:var(--success); background:#f0fff4; }
+    .photo-card h4 { margin-bottom:0.5rem; font-size:0.95rem; }
+  </style>
 </head>
 <body>
 <nav>
@@ -16,12 +27,33 @@
   </div>
 </nav>
 
+<!-- Borrow confirmation modal -->
+<div class="modal-overlay" id="borrow-modal">
+  <div class="modal">
+    <h2 style="margin-bottom:1rem">⚠️ Before You Borrow</h2>
+    <div class="warning-box">
+      <h3>You are responsible for this gear</h3>
+      <p>By proceeding, you accept full responsibility for all borrowed items. Any damage, loss, or failure to return on time will result in your account being locked and you may be required to cover replacement costs.</p>
+    </div>
+    <ul style="font-size:0.85rem;color:var(--muted);margin-bottom:1.5rem;padding-left:1.2rem">
+      <li>You must photograph each locker after collecting gear</li>
+      <li>Return all items by the due date or your account is locked</li>
+      <li>You must photograph each locker when returning</li>
+      <li>Report any damage to Tom immediately</li>
+    </ul>
+    <div style="display:flex;gap:0.75rem">
+      <button type="button" class="btn btn-primary" onclick="confirmBorrow()">I understand — proceed</button>
+      <button type="button" class="btn btn-secondary" onclick="closeBorrowModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <div class="container">
   <h1>Available Gear</h1>
   <div class="alert alert-error" id="error"></div>
   <div class="alert alert-success" id="success"></div>
 
-  <div class="card" id="not-approved" style="display:none; background:#fff3cd; border:1px solid #f39c12">
+  <div class="card" id="not-approved" style="display:none;background:#fff3cd;border:1px solid #f39c12">
     <h2>⏳ Account Pending Approval</h2>
     <p>Your account is waiting for Tom to approve it. You'll receive an email once approved.</p>
   </div>
@@ -31,20 +63,17 @@
 
     <div class="card" style="margin-top:1.5rem">
       <h2>Request Borrow</h2>
-      <p style="font-size:0.85rem;color:var(--muted);margin-bottom:1rem">Select items above, then choose duration.</p>
       <div class="form-group">
         <label>Days (max <span id="max-days">14</span>)</label>
         <input type="number" id="days" min="1" max="14" value="3" style="width:120px">
       </div>
-      <button class="btn btn-primary" onclick="requestBorrow()">Request Borrow</button>
+      <button type="button" class="btn btn-primary" onclick="openBorrowModal()">Request Borrow</button>
     </div>
 
-    <div class="card" id="active-loans-card" style="margin-top:1.5rem;display:none">
-      <h2>My Active Loans</h2>
-      <table>
-        <thead><tr><th>Items</th><th>Due Date</th><th>Status</th><th>Photo</th></tr></thead>
-        <tbody id="loans-table"></tbody>
-      </table>
+    <!-- Active loans + per-locker borrow photo upload -->
+    <div id="active-loans-card" style="margin-top:1.5rem;display:none">
+      <h2 style="margin-bottom:1rem">My Active Loans</h2>
+      <div id="loans-list"></div>
     </div>
   </div>
 </div>
@@ -53,23 +82,17 @@
 <script>
   requireAuth();
   let me, items = [];
+  const LOCKER_LABELS = { outdoor: "Outdoor Locker", top: "Top Locker", bottom: "Bottom Locker", pad: "Pad Stash" };
 
   async function init() {
     try {
       me = await getMe();
-      if (!me.is_approved) {
-        document.getElementById("not-approved").style.display = "block";
-        return;
-      }
-      if (me.is_locked) {
-        showError(document.getElementById("error"), "Your account is locked due to overdue items. Contact Tom.");
-      }
+      if (!me.is_approved) { document.getElementById("not-approved").style.display = "block"; return; }
+      if (me.is_locked) showError(document.getElementById("error"), "⚠️ Your account is locked due to overdue items. Contact Tom.");
       document.getElementById("main").style.display = "block";
       await loadItems();
       await loadMyLoans();
-    } catch (e) {
-      showError(document.getElementById("error"), e.message);
-    }
+    } catch (e) { showError(document.getElementById("error"), e.message); }
   }
 
   async function loadItems() {
@@ -82,81 +105,104 @@
           <span class="badge ${item.available ? 'badge-green' : 'badge-red'}">${item.available ? 'Available' : 'Out'}</span>
         </div>
         <p>${item.description || ''}</p>
-        <div style="display:flex;gap:0.5rem;font-size:0.8rem">
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.25rem">
           ${item.tag ? `<span class="badge badge-gray">Tag #${item.tag}</span>` : ''}
-          ${item.locker ? `<span class="badge badge-gray">${item.locker} locker</span>` : ''}
+          ${item.locker ? `<span class="badge badge-gray">${LOCKER_LABELS[item.locker] || item.locker}</span>` : ''}
         </div>
-        ${item.available ? `<label><input type="checkbox" value="${item.id}" class="item-check"> Add to request</label>` : ''}
+        ${item.available ? `<label style="margin-top:0.5rem"><input type="checkbox" value="${item.id}" class="item-check"> Add to request</label>` : ''}
       </div>
     `).join("");
   }
 
   async function loadMyLoans() {
     const loans = await apiFetch("/loans/my");
-    const active = loans.filter(l => !l.returned);
-    if (!active.length) return;
+    const active = loans.filter(l => l.status === "active" || l.status === "pending");
+    const card = document.getElementById("active-loans-card");
+    if (!active.length) { card.style.display = "none"; return; }
+    card.style.display = "block";
 
-    document.getElementById("active-loans-card").style.display = "block";
-    const tbody = document.getElementById("loans-table");
-    tbody.innerHTML = active.map(loan => {
-      const names = loan.item_ids.map(id => {
-        const item = items.find(i => i.id === id);
-        return item ? item.name : `#${id}`;
-      }).join(", ");
-      const due = new Date(loan.due_date).toLocaleDateString();
-      const overdue = new Date(loan.due_date) < new Date();
+    document.getElementById("loans-list").innerHTML = active.map(loan => {
+      const names = loan.item_ids.map(id => items.find(i => i.id === id)?.name || `#${id}`).join(", ");
+      const due = loan.due_date ? new Date(loan.due_date).toLocaleDateString() : "—";
+      const overdue = loan.due_date && new Date(loan.due_date) < new Date();
+      const isPending = loan.status === "pending";
+
+      const borrowPhotos = (loan.lockers || []).map(locker => {
+        const done = loan.photos.some(p => p.locker === locker && p.photo_type === "borrow");
+        return `
+          <div class="photo-card ${done ? 'done' : ''}">
+            <h4>${done ? '✓' : '📷'} ${LOCKER_LABELS[locker] || locker} — Borrow photo</h4>
+            ${done
+              ? `<span class="badge badge-green">Uploaded</span>`
+              : `<label class="btn btn-sm btn-secondary" style="cursor:pointer">Upload photo
+                  <input type="file" accept="image/*" style="display:none"
+                    onchange="uploadPhoto(${loan.id}, '${locker}', 'borrow', this)">
+                </label>`
+            }
+          </div>`;
+      }).join("");
+
       return `
-        <tr>
-          <td>${names}</td>
-          <td>${due}</td>
-          <td><span class="badge ${overdue ? 'badge-red' : 'badge-green'}">${overdue ? 'Overdue' : 'Active'}</span></td>
-          <td>${!loan.borrow_photo
-            ? `<label class="btn btn-sm btn-secondary" style="cursor:pointer">Upload <input type="file" accept="image/*" style="display:none" onchange="uploadBorrowPhoto(${loan.id}, this)"></label>`
-            : '<span class="badge badge-green">✓ Done</span>'
-          }</td>
-        </tr>
-      `;
+        <div class="card" style="margin-bottom:1rem">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem">
+            <div>
+              <strong>${names}</strong>
+              <div style="font-size:0.8rem;color:var(--muted)">Due: ${due}</div>
+            </div>
+            <span class="badge ${isPending ? 'badge-yellow' : overdue ? 'badge-red' : 'badge-green'}">
+              ${isPending ? 'Pending approval' : overdue ? 'Overdue' : 'Active'}
+            </span>
+          </div>
+          ${!isPending ? `<div><p style="font-size:0.85rem;color:var(--muted);margin-bottom:0.5rem">Upload a photo of each locker after collecting your gear:</p>${borrowPhotos}</div>` : ''}
+        </div>`;
     }).join("");
   }
 
-  async function requestBorrow() {
+  function openBorrowModal() {
+    const checked = [...document.querySelectorAll(".item-check:checked")];
+    if (!checked.length) return showError(document.getElementById("error"), "Select at least one item.");
+    const days = parseInt(document.getElementById("days").value);
+    if (!days || days < 1) return showError(document.getElementById("error"), "Enter valid number of days.");
+    document.getElementById("borrow-modal").classList.add("open");
+  }
+
+  function closeBorrowModal() {
+    document.getElementById("borrow-modal").classList.remove("open");
+  }
+
+  async function confirmBorrow() {
+    closeBorrowModal();
     const checked = [...document.querySelectorAll(".item-check:checked")].map(el => parseInt(el.value));
     const days = parseInt(document.getElementById("days").value);
     const err = document.getElementById("error");
     const suc = document.getElementById("success");
-    err.style.display = "none";
-    suc.style.display = "none";
-
-    if (!checked.length) return showError(err, "Select at least one item.");
-    if (!days || days < 1) return showError(err, "Enter valid number of days.");
+    err.style.display = "none"; suc.style.display = "none";
 
     try {
-      const loan = await apiFetch("/loans", {
-        method: "POST",
-        body: JSON.stringify({ item_ids: checked, days })
-      });
-      suc.textContent = `✓ Approved! Locker code: ${loan.locker_code}. Due: ${new Date(loan.due_date).toLocaleDateString()}. Check your email.`;
+      const loan = await apiFetch("/loans", { method: "POST", body: JSON.stringify({ item_ids: checked, days }) });
+      if (loan.status === "pending") {
+        suc.textContent = "✓ Request sent to Tom for approval. You'll receive an email when approved.";
+      } else {
+        const codes = Object.entries(loan.locker_codes || {}).map(([l, c]) => `${LOCKER_LABELS[l]}: ${c}`).join(", ");
+        suc.textContent = `✓ Approved! Codes: ${codes}. Due: ${new Date(loan.due_date).toLocaleDateString()}. Check your email.`;
+      }
       suc.style.display = "block";
       await loadItems();
       await loadMyLoans();
-    } catch (e) {
-      showError(err, e.message);
-    }
+    } catch (e) { showError(err, e.message); }
   }
 
-  async function uploadBorrowPhoto(loanId, input) {
+  async function uploadPhoto(loanId, locker, photoType, input) {
     const file = input.files[0];
     if (!file) return;
     const fd = new FormData();
+    fd.append("locker", locker);
+    fd.append("photo_type", photoType);
     fd.append("photo", file);
     try {
-      await apiFetch(`/loans/${loanId}/borrow-photo`, { method: "POST", body: fd });
-      document.getElementById("success").textContent = "✓ Borrow photo uploaded.";
-      document.getElementById("success").style.display = "block";
+      await apiFetch(`/loans/${loanId}/photos`, { method: "POST", body: fd });
       await loadMyLoans();
-    } catch (e) {
-      showError(document.getElementById("error"), e.message);
-    }
+    } catch (e) { showError(document.getElementById("error"), e.message); }
   }
 
   init();

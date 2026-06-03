@@ -3,11 +3,11 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import os
 
-
 SMTP_HOST = os.getenv("SMTP_HOST", "localhost")
 SMTP_PORT = int(os.getenv("SMTP_PORT", 587))
 SMTP_USER = os.getenv("SMTP_USER", "gear@thomascreagh.com")
 SMTP_PASS = os.getenv("SMTP_PASS", "")
+ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "tom@thomascreagh.com")
 
 
 def send_email(to: str, subject: str, body: str):
@@ -16,7 +16,6 @@ def send_email(to: str, subject: str, body: str):
     msg["To"] = to
     msg["Subject"] = subject
     msg.attach(MIMEText(body, "html"))
-
     try:
         with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
             server.starttls()
@@ -27,41 +26,42 @@ def send_email(to: str, subject: str, body: str):
 
 
 def send_account_created(email: str, password: str):
-    send_email(
-        email,
-        "Your Gear Account",
-        f"""
+    send_email(email, "Your Gear Account", f"""
         <p>Your account at gear.thomascreagh.com has been created.</p>
-        <p><b>Email:</b> {email}<br>
-        <b>Password:</b> {password}</p>
+        <p><b>Email:</b> {email}<br><b>Password:</b> {password}</p>
         <p>Please log in and change your password.</p>
-        """
+    """)
+
+
+def send_loan_approved(email: str, locker_codes: dict, due_date: str, items: list):
+    codes_html = "".join(
+        f"<li><b>{locker.title()}:</b> {code}</li>"
+        for locker, code in locker_codes.items()
     )
-
-
-def send_loan_approved(email: str, locker_code: str, due_date: str, items: list):
-    item_list = "".join(f"<li>{i}</li>" for i in items)
-    send_email(
-        email,
-        "Borrow Request Approved",
-        f"""
+    items_html = "".join(f"<li>{i}</li>" for i in items)
+    send_email(email, "Borrow Request Approved", f"""
         <p>Your borrow request has been approved.</p>
-        <p><b>Locker code:</b> {locker_code}</p>
         <p><b>Due date:</b> {due_date}</p>
-        <p><b>Items:</b><ul>{item_list}</ul></p>
-        <p>Please take a photo of the locker after collecting your gear.</p>
-        """
-    )
+        <p><b>Locker codes:</b><ul>{codes_html}</ul></p>
+        <p><b>Items:</b><ul>{items_html}</ul></p>
+        <p>Please photograph each locker after collecting your gear.</p>
+        <p><b>You are responsible for all borrowed gear. Any damage or loss must be reported to Tom immediately.</b></p>
+    """)
+
+
+def send_loan_pending_admin(user_email: str, items: list):
+    items_html = "".join(f"<li>{i}</li>" for i in items)
+    send_email(ADMIN_EMAIL, "New Gear Borrow Request", f"""
+        <p>{user_email} has requested to borrow gear:</p>
+        <ul>{items_html}</ul>
+        <p>Log in to the admin panel to approve or deny.</p>
+    """)
 
 
 def send_overdue_notice(email: str, items: list):
-    item_list = "".join(f"<li>{i}</li>" for i in items)
-    send_email(
-        email,
-        "Gear Return Overdue",
-        f"""
-        <p>You have overdue gear. Your account is locked until items are returned.</p>
-        <ul>{item_list}</ul>
-        <p>Please contact Tom to resolve this.</p>
-        """
-    )
+    items_html = "".join(f"<li>{i}</li>" for i in items)
+    send_email(email, "Gear Return Overdue", f"""
+        <p>You have overdue gear. Your account is now locked.</p>
+        <ul>{items_html}</ul>
+        <p>Contact Tom immediately to resolve this.</p>
+    """)

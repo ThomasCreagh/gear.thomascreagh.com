@@ -3,7 +3,13 @@ from sqlalchemy.orm import relationship
 from datetime import datetime
 from database import Base
 
-LOCKER_CHOICES = ["upper", "lower", "outdoor", "pad"]
+LOCKERS = ["outdoor", "top", "bottom", "pad"]
+LOCKER_LABELS = {
+    "outdoor": "Outdoor Locker",
+    "top": "Top Locker",
+    "bottom": "Bottom Locker",
+    "pad": "Pad Stash",
+}
 
 
 class User(Base):
@@ -15,6 +21,7 @@ class User(Base):
     is_admin = Column(Boolean, default=False)
     is_approved = Column(Boolean, default=False)
     is_locked = Column(Boolean, default=False)
+    auto_approve = Column(Boolean, default=False)  # skip Tom's review
     created_at = Column(DateTime, default=datetime.utcnow)
 
     loans = relationship("Loan", back_populates="user")
@@ -27,10 +34,10 @@ class Item(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
     description = Column(String)
-    tag = Column(Integer)                          # physical tag number
-    # upper | lower | outdoor | pad
-    locker = Column(String)
+    tag = Column(Integer)
+    locker = Column(String)  # outdoor | top | bottom | pad
     available = Column(Boolean, default=True)
+    retired = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -40,16 +47,28 @@ class Loan(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     item_ids = Column(JSON, nullable=False)
-    locker_code = Column(String)
-    locker = Column(String)                        # which locker to use
+    locker_codes = Column(JSON)   # {"outdoor": "1234", "top": "5678"}
+    lockers = Column(JSON)        # ["outdoor", "top"] — which lockers involved
     due_date = Column(DateTime)
-    returned = Column(Boolean, default=False)
-    borrow_photo = Column(String)
-    return_photo = Column(String)
+    status = Column(String, default="active")  # pending | active | returned
     created_at = Column(DateTime, default=datetime.utcnow)
     returned_at = Column(DateTime)
 
     user = relationship("User", back_populates="loans")
+    photos = relationship("LoanPhoto", back_populates="loan", cascade="all, delete")
+
+
+class LoanPhoto(Base):
+    __tablename__ = "loan_photos"
+
+    id = Column(Integer, primary_key=True, index=True)
+    loan_id = Column(Integer, ForeignKey("loans.id"), nullable=False)
+    locker = Column(String, nullable=False)       # which locker this photo is of
+    photo_type = Column(String, nullable=False)   # borrow | return
+    file_path = Column(String, nullable=False)
+    uploaded_at = Column(DateTime, default=datetime.utcnow)
+
+    loan = relationship("Loan", back_populates="photos")
 
 
 class AuditLog(Base):
@@ -68,8 +87,7 @@ class LockerCode(Base):
     __tablename__ = "locker_codes"
 
     id = Column(Integer, primary_key=True, index=True)
-    # which locker this code is for
-    locker = Column(String, nullable=False)
+    locker = Column(String, nullable=False)  # outdoor | top | bottom | pad
     code = Column(String, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow)
     updated_by = Column(Integer, ForeignKey("users.id"))

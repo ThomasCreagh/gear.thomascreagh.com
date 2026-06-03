@@ -5,6 +5,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Gear — Return</title>
   <link rel="stylesheet" href="static/style.css">
+  <style>
+    .photo-card { border:2px dashed var(--border); border-radius:var(--radius); padding:1rem; margin-bottom:0.75rem; }
+    .photo-card.done { border-color:var(--success); background:#f0fff4; }
+    .photo-card h4 { margin-bottom:0.5rem; font-size:0.95rem; }
+    .danger-box { background:#fde8e8; border:1px solid #f5c6c6; border-radius:var(--radius); padding:1rem; margin-bottom:1.5rem; }
+    .danger-box h3 { color:var(--danger); margin-bottom:0.5rem; }
+    .danger-box p { color:var(--danger); font-size:0.9rem; }
+    .danger-box ul { color:var(--danger); font-size:0.85rem; padding-left:1.2rem; margin-top:0.5rem; }
+  </style>
 </head>
 <body>
 <nav>
@@ -18,6 +27,17 @@
 
 <div class="container">
   <h1>Return Gear</h1>
+
+  <div class="danger-box">
+    <h3>⚠️ Important — read before returning</h3>
+    <p>You must photograph <strong>every locker</strong> you are returning gear to before confirming. Missing photos will prevent submission.</p>
+    <ul>
+      <li>Failure to upload all photos will block your return</li>
+      <li>Returning incomplete gear will lock your account immediately</li>
+      <li>If anything is damaged or missing, contact Tom before returning</li>
+    </ul>
+  </div>
+
   <div class="alert alert-error" id="error"></div>
   <div class="alert alert-success" id="success"></div>
   <div id="loans-list"></div>
@@ -26,11 +46,12 @@
 <script src="static/api.js"></script>
 <script>
   requireAuth();
+  const LOCKER_LABELS = { outdoor: "Outdoor Locker", top: "Top Locker", bottom: "Bottom Locker", pad: "Pad Stash" };
 
   async function init() {
     try {
       const [loans, items] = await Promise.all([apiFetch("/loans/my"), apiFetch("/items")]);
-      const active = loans.filter(l => !l.returned);
+      const active = loans.filter(l => l.status === "active");
       const container = document.getElementById("loans-list");
 
       if (!active.length) {
@@ -39,14 +60,32 @@
       }
 
       container.innerHTML = active.map(loan => {
-        const names = loan.item_ids.map(id => {
-          const item = items.find(i => i.id === id);
-          return item ? item.name : `#${id}`;
-        });
+        const names = loan.item_ids.map(id => items.find(i => i.id === id)?.name || `#${id}`).join(", ");
         const due = new Date(loan.due_date).toLocaleDateString();
         const overdue = new Date(loan.due_date) < new Date();
+
+        const photoCards = (loan.lockers || []).map(locker => {
+          const done = loan.photos.some(p => p.locker === locker && p.photo_type === "return");
+          return `
+            <div class="photo-card ${done ? 'done' : ''}" id="photo-card-${loan.id}-${locker}">
+              <h4>${done ? '✓' : '📷'} ${LOCKER_LABELS[locker] || locker} — Return photo</h4>
+              ${done
+                ? `<span class="badge badge-green">Uploaded ✓</span>`
+                : `<p style="font-size:0.8rem;color:var(--danger);margin-bottom:0.5rem">Required — cannot submit without this</p>
+                   <label class="btn btn-sm btn-secondary" style="cursor:pointer">Upload photo
+                     <input type="file" accept="image/*" style="display:none"
+                       onchange="uploadReturnPhoto(${loan.id}, '${locker}', this)">
+                   </label>`
+              }
+            </div>`;
+        }).join("");
+
+        const allDone = (loan.lockers || []).every(locker =>
+          loan.photos.some(p => p.locker === locker && p.photo_type === "return")
+        );
+
         return `
-          <div class="card">
+          <div class="card" id="loan-card-${loan.id}" style="margin-bottom:1rem">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
               <div>
                 <h2>Loan #${loan.id}</h2>
@@ -54,34 +93,45 @@
               </div>
               <span class="badge ${overdue ? 'badge-red' : 'badge-green'}">${overdue ? 'Overdue' : 'Active'}</span>
             </div>
-            <p style="margin-bottom:1rem"><strong>Items:</strong> ${names.join(", ")}</p>
-            <div style="margin-bottom:1rem">
-              <label>Photo of returned locker (required)</label>
-              <input type="file" accept="image/*" id="photo-${loan.id}">
-            </div>
-            <button class="btn btn-success" onclick="returnLoan(${loan.id})">Confirm Return</button>
-          </div>
-        `;
+            <p style="margin-bottom:1rem"><strong>Items:</strong> ${names}</p>
+            <p style="font-size:0.85rem;color:var(--muted);margin-bottom:0.75rem">
+              Upload a photo of each locker after placing gear inside:
+            </p>
+            <div id="photos-${loan.id}">${photoCards}</div>
+            <button type="button" class="btn btn-success" id="return-btn-${loan.id}"
+              onclick="confirmReturn(${loan.id})"
+              ${allDone ? '' : 'disabled style="opacity:0.4;cursor:not-allowed"'}>
+              ${allDone ? 'Confirm Return' : 'Upload all photos to enable return'}
+            </button>
+            ${!allDone ? `<p style="font-size:0.8rem;color:var(--danger);margin-top:0.5rem">⚠️ All locker photos required before you can confirm return</p>` : ''}
+          </div>`;
       }).join("");
     } catch (e) {
       showError(document.getElementById("error"), e.message);
     }
   }
 
-  async function returnLoan(loanId) {
-    const fileInput = document.getElementById(`photo-${loanId}`);
+  async function uploadReturnPhoto(loanId, locker, input) {
+    const file = input.files[0];
+    if (!file) return;
+    const fd = new FormData();
+    fd.append("locker", locker);
+    fd.append("photo_type", "return");
+    fd.append("photo", file);
+    try {
+      await apiFetch(`/loans/${loanId}/photos`, { method: "POST", body: fd });
+      await init(); // re-render to update button state
+    } catch (e) {
+      showError(document.getElementById("error"), e.message);
+    }
+  }
+
+  async function confirmReturn(loanId) {
     const err = document.getElementById("error");
     const suc = document.getElementById("success");
-    err.style.display = "none";
-    suc.style.display = "none";
-
-    if (!fileInput.files[0]) return showError(err, "Please take and upload a photo of the locker.");
-
-    const fd = new FormData();
-    fd.append("photo", fileInput.files[0]);
-
+    err.style.display = "none"; suc.style.display = "none";
     try {
-      const result = await apiFetch(`/loans/${loanId}/return`, { method: "POST", body: fd });
+      const result = await apiFetch(`/loans/${loanId}/return`, { method: "POST" });
       suc.textContent = `✓ Return logged at ${new Date(result.returned_at).toLocaleString()}. Thank you!`;
       suc.style.display = "block";
       await init();

@@ -1,44 +1,42 @@
 from pydantic import BaseModel, EmailStr
-from typing import Optional, List
+from typing import Optional, List, Dict
 from datetime import datetime
 
-LOCKERS = ["upper", "lower", "outdoor", "pad"]
+LOCKERS = ["outdoor", "top", "bottom", "pad"]
+LOCKER_LABELS = {
+    "outdoor": "Outdoor Locker",
+    "top": "Top Locker",
+    "bottom": "Bottom Locker",
+    "pad": "Pad Stash",
+}
 
 # Auth
-
-
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
-
 
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
 
 # Users
-
-
 class UserOut(BaseModel):
     id: int
     email: str
     is_admin: bool
     is_approved: bool
     is_locked: bool
+    auto_approve: bool
     created_at: Optional[datetime] = None
-
     class Config:
         from_attributes = True
 
 # Items
-
-
 class ItemCreate(BaseModel):
     name: str
     description: Optional[str] = None
     tag: Optional[int] = None
-    locker: Optional[str] = None  # upper | lower | outdoor | pad
-
+    locker: Optional[str] = None
 
 class ItemUpdate(BaseModel):
     name: Optional[str] = None
@@ -46,7 +44,7 @@ class ItemUpdate(BaseModel):
     tag: Optional[int] = None
     locker: Optional[str] = None
     available: Optional[bool] = None
-
+    retired: Optional[bool] = None
 
 class ItemOut(BaseModel):
     id: int
@@ -55,54 +53,49 @@ class ItemOut(BaseModel):
     tag: Optional[int]
     locker: Optional[str]
     available: bool
+    retired: bool
+    class Config:
+        from_attributes = True
 
+# Photos
+class LoanPhotoOut(BaseModel):
+    id: int
+    loan_id: int
+    locker: str
+    photo_type: str
+    file_path: str
+    uploaded_at: datetime
     class Config:
         from_attributes = True
 
 # Loans
-
-
 class LoanCreate(BaseModel):
     item_ids: List[int]
     days: int
-
 
 class LoanOut(BaseModel):
     id: int
     user_id: int
     item_ids: List[int]
-    locker_code: Optional[str]
-    locker: Optional[str]
+    locker_codes: Optional[Dict]
+    lockers: Optional[List[str]]
     due_date: Optional[datetime]
-    returned: bool
+    status: str
     created_at: datetime
     returned_at: Optional[datetime]
-
+    photos: List[LoanPhotoOut] = []
     class Config:
         from_attributes = True
 
 # Admin
-
-
 class StockCheckItem(BaseModel):
     item_id: int
     present: bool
     notes: Optional[str] = None
 
-
 class StockCheckRequest(BaseModel):
     items: List[StockCheckItem]
 
-
 class LockerCodeUpdate(BaseModel):
-    locker: str  # upper | lower | outdoor | pad
-    code: str
-
-
-class LockerCodeOut(BaseModel):
     locker: str
     code: str
-    updated_at: Optional[datetime]
-
-    class Config:
-        from_attributes = True
