@@ -1,13 +1,13 @@
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-import os
+from secrets import read_secret
 
-SMTP_HOST = os.getenv("SMTP_HOST", "localhost")
-SMTP_PORT = int(os.getenv("SMTP_PORT", 587))
-SMTP_USER = os.getenv("SMTP_USER", "gear@thomascreagh.com")
-SMTP_PASS = os.getenv("SMTP_PASS", "")
-ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "tom@thomascreagh.com")
+SMTP_HOST = read_secret("SMTP_HOST", "localhost")
+SMTP_PORT = int(read_secret("SMTP_PORT", "587"))
+SMTP_USER = read_secret("SMTP_USER", "gear@thomascreagh.com")
+SMTP_PASS = read_secret("SMTP_PASS", "")
+ADMIN_EMAIL = read_secret("ADMIN_EMAIL", "tom@thomascreagh.com")
 
 
 def send_email(to: str, subject: str, body: str):
@@ -35,9 +35,7 @@ def send_account_created(email: str, password: str):
 
 def send_loan_approved(email: str, locker_codes: dict, due_date: str, items: list):
     codes_html = "".join(
-        f"<li><b>{locker.title()}:</b> {code}</li>"
-        for locker, code in locker_codes.items()
-    )
+        f"<li><b>{k.title()}:</b> {v}</li>" for k, v in locker_codes.items())
     items_html = "".join(f"<li>{i}</li>" for i in items)
     send_email(email, "Borrow Request Approved", f"""
         <p>Your borrow request has been approved.</p>

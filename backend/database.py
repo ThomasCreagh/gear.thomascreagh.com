@@ -1,13 +1,10 @@
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
-import os
-from dotenv import load_dotenv
+from secrets import read_secret
 
-load_dotenv()
-
-DATABASE_URL = os.getenv(
-    "DATABASE_URL", "postgresql://user:password@localhost/gear")
+DATABASE_URL = read_secret(
+    "DATABASE_URL", "postgresql://gearuser:gearpass@localhost/gear")
 
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

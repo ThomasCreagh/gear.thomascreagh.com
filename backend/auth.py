@@ -5,14 +5,14 @@ from passlib.context import CryptContext
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
-import os
 
 from database import get_db
+from secrets import read_secret
 import models
 
-SECRET_KEY = os.getenv("SECRET_KEY", "changeme")
+SECRET_KEY = read_secret("SECRET_KEY", "changeme")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 bearer_scheme = HTTPBearer()
@@ -48,7 +48,7 @@ def get_current_user(
         user_id: int = int(payload.get("sub"))
         if user_id is None:
             raise credentials_exception
-    except JWTError:
+    except (JWTError, TypeError, ValueError):
         raise credentials_exception
 
     user = db.query(models.User).filter(models.User.id == user_id).first()
