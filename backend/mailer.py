@@ -1,7 +1,7 @@
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from secrets import read_secret
+from config import read_secret
 
 SMTP_HOST = read_secret("SMTP_HOST", "localhost")
 SMTP_PORT = int(read_secret("SMTP_PORT", "587"))

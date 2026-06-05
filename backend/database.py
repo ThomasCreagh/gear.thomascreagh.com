@@ -1,7 +1,7 @@
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
-from secrets import read_secret
+from config import read_secret
 
 DATABASE_URL = read_secret(
     "DATABASE_URL", "postgresql://gearuser:gearpass@localhost/gear")

@@ -7,7 +7,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 
 from database import get_db
-from secrets import read_secret
+from config import read_secret
 import models
 
 SECRET_KEY = read_secret("SECRET_KEY", "changeme")
