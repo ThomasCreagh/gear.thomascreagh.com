@@ -321,7 +321,7 @@
                   <strong style="text-transform:capitalize">${type} photos:</strong>
                   ${photos.length ? `<div class="photo-grid">${photos.map(p => `
                     <div class="photo-thumb">
-                      <img src="/${p.file_path}" onclick="openLightbox('/${p.file_path}')" title="${LOCKER_LABELS[p.locker] || p.locker}">
+                      <img src="/uploads/${p.file_path.split('/').pop()}" onclick="openLightbox('/uploads/${p.file_path.split('/').pop()}')" title="${LOCKER_LABELS[p.locker] || p.locker}">
                       <span>${LOCKER_LABELS[p.locker] || p.locker}</span>
                     </div>`).join("")}</div>`
                   : `<span style="color:var(--muted);font-size:0.85rem"> None yet</span>`}
