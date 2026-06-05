@@ -14,7 +14,7 @@ from mailer import send_loan_approved, send_loan_pending_admin
 router = APIRouter(prefix="/loans", tags=["loans"])
 
 MAX_LOAN_DAYS = int(os.getenv("MAX_LOAN_DAYS", 14))
-UPLOAD_DIR = "uploads"
+UPLOAD_DIR = "/var/lib/gear/uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 

@@ -35,6 +35,6 @@ def health():
 
 
 # Static mounts last — catch-all, would swallow API routes if mounted first
-os.makedirs("uploads", exist_ok=True)
-app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+os.makedirs("/var/lib/gear/uploads", exist_ok=True)
+app.mount("/uploads", StaticFiles(directory="/var/lib/gear/uploads"), name="uploads")
 app.mount("/", StaticFiles(directory="../frontend", html=True), name="frontend")
