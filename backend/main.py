@@ -5,10 +5,12 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
+from config import read_secret
 import os
 
 load_dotenv()
 
+UPLOAD_DIR = read_secret("UPLOAD_DIR", "uploads")
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -35,6 +37,6 @@ def health():
 
 
 # Static mounts last — catch-all, would swallow API routes if mounted first
-os.makedirs("/var/lib/gear/uploads", exist_ok=True)
-app.mount("/uploads", StaticFiles(directory="/var/lib/gear/uploads"), name="uploads")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 app.mount("/", StaticFiles(directory="../frontend", html=True), name="frontend")

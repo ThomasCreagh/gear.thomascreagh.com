@@ -11,6 +11,8 @@ LOCKER_LABELS = {
     "pad": "Pad Stash",
 }
 
+ITEM_STATUSES = ["active", "retired", "missing"]
+
 
 class User(Base):
     __tablename__ = "users"
@@ -21,7 +23,7 @@ class User(Base):
     is_admin = Column(Boolean, default=False)
     is_approved = Column(Boolean, default=False)
     is_locked = Column(Boolean, default=False)
-    auto_approve = Column(Boolean, default=False)  # skip Tom's review
+    auto_approve = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     loans = relationship("Loan", back_populates="user")
@@ -32,13 +34,26 @@ class Item(Base):
     __tablename__ = "items"
 
     id = Column(Integer, primary_key=True, index=True)
+    # item type: harness, cam, etc.
     name = Column(String, nullable=False)
+    # model/spec: "BD C4 size 1 red"
     description = Column(String)
-    tag = Column(Integer)
-    locker = Column(String)  # outdoor | top | bottom | pad
-    available = Column(Boolean, default=True)
-    retired = Column(Boolean, default=False)
+    # tag number as string e.g. "001"
+    tag = Column(String)
+    # outdoor | top | bottom | pad
+    locker = Column(String)
+    available = Column(Boolean, default=True)       # False when on loan
+    # active | retired | missing
+    status = Column(String, default="active")
+    # free text: "2021", "2010 or earlier"
+    manufactured_date = Column(String)
+    # from stock check: "good", "janky wire"
+    condition_notes = Column(String)
+    # email if currently on loan outside system
+    borrowed_by_email = Column(String)
     created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow,
+                        onupdate=datetime.utcnow)
 
 
 class Loan(Base):
@@ -48,14 +63,16 @@ class Loan(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     item_ids = Column(JSON, nullable=False)
     locker_codes = Column(JSON)   # {"outdoor": "1234", "top": "5678"}
-    lockers = Column(JSON)        # ["outdoor", "top"] — which lockers involved
+    lockers = Column(JSON)        # ["outdoor", "top"]
     due_date = Column(DateTime)
-    status = Column(String, default="active")  # pending | active | returned
+    # pending | active | returned | denied
+    status = Column(String, default="active")
     created_at = Column(DateTime, default=datetime.utcnow)
     returned_at = Column(DateTime)
 
     user = relationship("User", back_populates="loans")
-    photos = relationship("LoanPhoto", back_populates="loan", cascade="all, delete")
+    photos = relationship(
+        "LoanPhoto", back_populates="loan", cascade="all, delete")
 
 
 class LoanPhoto(Base):
@@ -63,7 +80,7 @@ class LoanPhoto(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     loan_id = Column(Integer, ForeignKey("loans.id"), nullable=False)
-    locker = Column(String, nullable=False)       # which locker this photo is of
+    locker = Column(String, nullable=False)
     photo_type = Column(String, nullable=False)   # borrow | return
     file_path = Column(String, nullable=False)
     uploaded_at = Column(DateTime, default=datetime.utcnow)
@@ -87,7 +104,7 @@ class LockerCode(Base):
     __tablename__ = "locker_codes"
 
     id = Column(Integer, primary_key=True, index=True)
-    locker = Column(String, nullable=False)  # outdoor | top | bottom | pad
+    locker = Column(String, nullable=False)
     code = Column(String, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow)
     updated_by = Column(Integer, ForeignKey("users.id"))

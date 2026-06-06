@@ -27,6 +27,8 @@
           email-validator
           python-dotenv
           python-multipart
+          openpyxl
+          pandas
         ]);
       in
       pkgs.mkShell {

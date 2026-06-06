@@ -7,14 +7,16 @@ import shutil
 import uuid
 
 from database import get_db
-import models, schemas
+import models
+import schemas
 from auth import get_approved_user, get_admin_user
 from mailer import send_loan_approved, send_loan_pending_admin
+from config import read_secret
 
 router = APIRouter(prefix="/loans", tags=["loans"])
 
 MAX_LOAN_DAYS = int(os.getenv("MAX_LOAN_DAYS", 14))
-UPLOAD_DIR = "/var/lib/gear/uploads"
+UPLOAD_DIR = read_secret("UPLOAD_DIR", "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
@@ -47,7 +49,8 @@ def create_loan(
     current_user: models.User = Depends(get_approved_user)
 ):
     if loan.days > MAX_LOAN_DAYS or loan.days < 1:
-        raise HTTPException(status_code=400, detail=f"Days must be 1-{MAX_LOAN_DAYS}")
+        raise HTTPException(
+            status_code=400, detail=f"Days must be 1-{MAX_LOAN_DAYS}")
 
     items = []
     for item_id in loan.item_ids:
@@ -57,7 +60,8 @@ def create_loan(
             models.Item.retired == False,
         ).first()
         if not item:
-            raise HTTPException(status_code=400, detail=f"Item {item_id} not available")
+            raise HTTPException(status_code=400, detail=f"Item {
+                                item_id} not available")
         items.append(item)
 
     # Determine which lockers are involved
@@ -86,14 +90,16 @@ def create_loan(
     db.add(models.AuditLog(
         user_id=current_user.id,
         action="loan_created",
-        details=f"status={status}, items={loan.item_ids}, lockers={involved_lockers}"
+        details=f"status={status}, items={
+            loan.item_ids}, lockers={involved_lockers}"
     ))
     db.commit()
     db.refresh(db_loan)
 
     item_names = [i.name for i in items]
     if current_user.auto_approve:
-        send_loan_approved(current_user.email, locker_codes, due_date.strftime("%Y-%m-%d"), item_names)
+        send_loan_approved(current_user.email, locker_codes,
+                           due_date.strftime("%Y-%m-%d"), item_names)
     else:
         send_loan_pending_admin(current_user.email, item_names)
 
@@ -116,9 +122,11 @@ def upload_photo(
     if not loan:
         raise HTTPException(status_code=404, detail="Loan not found")
     if locker not in (loan.lockers or []):
-        raise HTTPException(status_code=400, detail=f"Locker {locker} not part of this loan")
+        raise HTTPException(status_code=400, detail=f"Locker {
+                            locker} not part of this loan")
     if photo_type not in ("borrow", "return"):
-        raise HTTPException(status_code=400, detail="photo_type must be borrow or return")
+        raise HTTPException(
+            status_code=400, detail="photo_type must be borrow or return")
 
     # Replace existing photo for same locker+type if exists
     existing = db.query(models.LoanPhoto).filter(
@@ -221,12 +229,14 @@ def approve_loan(
     loan.locker_codes = locker_codes
     loan.status = "active"
 
-    db.add(models.AuditLog(user_id=admin.id, action="loan_approved", details=f"Loan {loan_id}"))
+    db.add(models.AuditLog(user_id=admin.id,
+           action="loan_approved", details=f"Loan {loan_id}"))
     db.commit()
 
     user = db.query(models.User).get(loan.user_id)
     item_names = [i.name for i in items if i]
-    send_loan_approved(user.email, locker_codes, loan.due_date.strftime("%Y-%m-%d"), item_names)
+    send_loan_approved(user.email, locker_codes,
+                       loan.due_date.strftime("%Y-%m-%d"), item_names)
     return {"message": "Loan approved"}
 
 
@@ -241,6 +251,7 @@ def deny_loan(
         raise HTTPException(status_code=404, detail="Pending loan not found")
 
     loan.status = "denied"
-    db.add(models.AuditLog(user_id=admin.id, action="loan_denied", details=f"Loan {loan_id}"))
+    db.add(models.AuditLog(user_id=admin.id,
+           action="loan_denied", details=f"Loan {loan_id}"))
     db.commit()
     return {"message": "Loan denied"}
