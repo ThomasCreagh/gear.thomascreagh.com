@@ -57,7 +57,7 @@ def create_loan(
         item = db.query(models.Item).filter(
             models.Item.id == item_id,
             models.Item.available == True,
-            models.Item.retired == False,
+            models.Item.status == "active",
         ).first()
         if not item:
             raise HTTPException(status_code=400, detail=f"Item {
