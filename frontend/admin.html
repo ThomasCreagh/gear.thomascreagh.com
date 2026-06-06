@@ -20,6 +20,7 @@
     .expandable.open { display:table-row; }
     .expand-row td { background:var(--bg); padding:1rem; }
     .pending-badge { background:#fff3cd; color:#856404; }
+    .badge-yellow { background:#fff3cd; color:#856404; }
   </style>
 </head>
 <body>
@@ -231,15 +232,21 @@
   async function loadItems() {
     allItems = await apiFetch("/items/all");
     document.getElementById("items-table").innerHTML = allItems.map(i => `
-      <tr style="${i.retired ? 'opacity:0.5' : ''}">
+      <tr style="${i.status !== 'active' ? 'opacity:0.5' : ''}">
         <td><span class="badge badge-gray">#${i.tag ?? '—'}</span></td>
         <td>${i.name}</td>
         <td>${i.locker ? `<span class="badge badge-gray">${LOCKER_LABELS[i.locker] || i.locker}</span>` : '—'}</td>
         <td><span class="badge ${i.available ? 'badge-green' : 'badge-red'}">${i.available ? 'Yes' : 'No'}</span></td>
-        <td>${i.retired ? '<span class="badge badge-red">Retired</span>' : '<span class="badge badge-green">Active</span>'}</td>
+        <td>${
+          i.status === 'retired' ? '<span class="badge badge-red">Retired</span>' :
+          i.status === 'missing' ? '<span class="badge badge-yellow">Missing</span>' :
+          '<span class="badge badge-green">Active</span>'
+        }</td>
         <td style="display:flex;gap:0.4rem;flex-wrap:wrap">
-          ${!i.retired ? `<button class="btn btn-sm btn-secondary" onclick="toggleItem(${i.id}, ${!i.available})">${i.available ? 'Mark Out' : 'Mark In'}</button>` : ''}
-          <button class="btn btn-sm ${i.retired ? 'btn-success' : 'btn-danger'}" onclick="toggleRetire(${i.id}, ${i.retired})">${i.retired ? 'Restore' : 'Retire'}</button>
+          ${i.status === 'active' ? `<button class="btn btn-sm btn-secondary" onclick="toggleItem(${i.id}, ${!i.available})">${i.available ? 'Mark Out' : 'Mark In'}</button>` : ''}
+          ${i.status === 'active' ? `<button class="btn btn-sm btn-danger" onclick="setStatus(${i.id}, 'retired')">Retire</button>` : ''}
+          ${i.status === 'active' ? `<button class="btn btn-sm btn-secondary" onclick="setStatus(${i.id}, 'missing')">Missing</button>` : ''}
+          ${i.status !== 'active' ? `<button class="btn btn-sm btn-success" onclick="setStatus(${i.id}, 'active')">Restore</button>` : ''}
           <button class="btn btn-sm btn-danger" onclick="deleteItem(${i.id})">Delete</button>
         </td>
       </tr>
@@ -259,11 +266,16 @@
   }
 
   async function toggleItem(id, available) { await apiFetch(`/items/${id}`, { method: "PUT", body: JSON.stringify({ available }) }); await loadItems(); }
-  async function toggleRetire(id, currentlyRetired) {
-    if (!currentlyRetired && !confirm("Retire this item? Users will no longer be able to borrow it.")) return;
-    await apiFetch(`/items/${id}`, { method: "PUT", body: JSON.stringify({ retired: !currentlyRetired }) });
+
+  async function setStatus(id, newStatus) {
+    const msgs = { retired: "Retire this item?", missing: "Mark as missing?", active: "Restore this item?" };
+    if (!confirm(msgs[newStatus])) return;
+    const payload = { status: newStatus };
+    if (newStatus !== 'active') payload.available = false;
+    await apiFetch(`/items/${id}`, { method: "PUT", body: JSON.stringify(payload) });
     await loadItems();
   }
+
   async function deleteItem(id) {
     if (!confirm("Permanently delete this item?")) return;
     await apiFetch(`/items/${id}`, { method: "DELETE" }); await loadItems();
@@ -361,7 +373,7 @@
 
   // --- STOCK CHECK ---
   function buildStockList() {
-    const activeItems = allItems.filter(i => !i.retired);
+    const activeItems = allItems.filter(i => i.status === 'active');
     document.getElementById("stock-list").innerHTML = activeItems.map(item => `
       <div style="display:flex;align-items:center;gap:1rem;padding:0.5rem 0;border-bottom:1px solid var(--border)">
         <span class="badge badge-gray">#${item.tag ?? '—'}</span>
@@ -374,7 +386,7 @@
   }
 
   async function submitStock() {
-    const activeItems = allItems.filter(i => !i.retired);
+    const activeItems = allItems.filter(i => i.status === 'active');
     const items = activeItems.map(item => ({
       item_id: item.id,
       present: document.getElementById(`stock-${item.id}`).checked,
