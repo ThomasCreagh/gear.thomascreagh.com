@@ -12,13 +12,11 @@ router = APIRouter(prefix="/items", tags=["items"])
 
 @router.get("", response_model=List[schemas.ItemOut])
 def list_items(db: Session = Depends(get_db), current_user: models.User = Depends(get_approved_user)):
-    # Users only see non-retired items
-    return db.query(models.Item).filter(models.Item.retired == False).order_by(models.Item.tag).all()
+    return db.query(models.Item).filter(models.Item.status == "active").order_by(models.Item.tag).all()
 
 
 @router.get("/all", response_model=List[schemas.ItemOut])
 def list_all_items(db: Session = Depends(get_db), admin: models.User = Depends(get_admin_user)):
-    # Admin sees everything including retired
     return db.query(models.Item).order_by(models.Item.tag).all()
 
 
@@ -40,8 +38,8 @@ def update_item(item_id: int, item: schemas.ItemUpdate, db: Session = Depends(ge
         raise HTTPException(status_code=404, detail="Item not found")
     for k, v in item.dict(exclude_none=True).items():
         setattr(db_item, k, v)
-    db.add(models.AuditLog(user_id=admin.id,
-           action="item_updated", details=f"Item {item_id}"))
+    db.add(models.AuditLog(user_id=admin.id, action="item_updated",
+           details=f"Item {item_id}: {item.dict(exclude_none=True)}"))
     db.commit()
     db.refresh(db_item)
     return db_item

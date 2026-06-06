@@ -21,6 +21,13 @@
     .expand-row td { background:var(--bg); padding:1rem; }
     .pending-badge { background:#fff3cd; color:#856404; }
     .badge-yellow { background:#fff3cd; color:#856404; }
+    .modal-bg { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:100; align-items:center; justify-content:center; }
+    .modal-bg.open { display:flex; }
+    .modal { background:var(--card-bg, #fff); border-radius:var(--radius); padding:1.5rem; width:420px; max-width:95vw; display:flex; flex-direction:column; gap:0.6rem; }
+    .modal h2 { margin:0 0 0.5rem; }
+    .modal label { font-size:0.8rem; font-weight:600; margin-top:0.3rem; }
+    .modal input, .modal select { margin:0; }
+    .modal-actions { display:flex; gap:0.5rem; margin-top:0.5rem; }
   </style>
 </head>
 <body>
@@ -29,6 +36,37 @@
 <div class="lightbox" id="lightbox" onclick="closeLightbox()">
   <img id="lightbox-img" src="" alt="Photo">
   <button onclick="closeLightbox()">✕ Close</button>
+</div>
+
+<!-- Edit Modal -->
+<div class="modal-bg" id="edit-modal" onclick="if(event.target===this)closeEdit()">
+  <div class="modal">
+    <h2>Edit Item</h2>
+    <label>Tag #</label>
+    <input type="text" id="edit-tag" placeholder="001">
+    <label>Name</label>
+    <input type="text" id="edit-name">
+    <label>Description</label>
+    <input type="text" id="edit-desc">
+    <label>Locker</label>
+    <select id="edit-locker">
+      <option value="">— None —</option>
+      <option value="outdoor">Outdoor Locker</option>
+      <option value="top">Top Locker</option>
+      <option value="bottom">Bottom Locker</option>
+      <option value="pad">Pad Stash</option>
+    </select>
+    <label>Manufactured Date</label>
+    <input type="text" id="edit-mfg" placeholder="e.g. 2018">
+    <label>Condition Notes</label>
+    <input type="text" id="edit-condition">
+    <label>Borrowed By (email)</label>
+    <input type="text" id="edit-borrowed" placeholder="user@tcd.ie">
+    <div class="modal-actions">
+      <button class="btn btn-primary" onclick="saveEdit()">Save</button>
+      <button class="btn btn-secondary" onclick="closeEdit()">Cancel</button>
+    </div>
+  </div>
 </div>
 
 <nav>
@@ -82,7 +120,7 @@
       <h2>Add Item</h2>
       <label>Name</label><input type="text" id="new-item-name" placeholder="Tent, Sleeping Bag...">
       <label>Description</label><input type="text" id="new-item-desc" placeholder="Optional">
-      <label>Tag #</label><input type="number" id="new-item-tag" placeholder="e.g. 42" style="width:120px">
+      <label>Tag #</label><input type="text" id="new-item-tag" placeholder="e.g. 042" style="width:120px">
       <label>Locker</label>
       <select id="new-item-locker">
         <option value="">-- Select --</option>
@@ -162,6 +200,7 @@
 <script>
   const LOCKER_LABELS = { outdoor: "Outdoor Locker", top: "Top Locker", bottom: "Bottom Locker", pad: "Pad Stash" };
   let allUsers = [], allItems = [], allLoans = [];
+  let editingId = null;
 
   async function init() {
     await requireAdmin();
@@ -244,6 +283,7 @@
         }</td>
         <td style="display:flex;gap:0.4rem;flex-wrap:wrap">
           ${i.status === 'active' ? `<button class="btn btn-sm btn-secondary" onclick="toggleItem(${i.id}, ${!i.available})">${i.available ? 'Mark Out' : 'Mark In'}</button>` : ''}
+          <button class="btn btn-sm btn-primary" onclick="openEdit(${i.id})">Edit</button>
           ${i.status === 'active' ? `<button class="btn btn-sm btn-danger" onclick="setStatus(${i.id}, 'retired')">Retire</button>` : ''}
           ${i.status === 'active' ? `<button class="btn btn-sm btn-secondary" onclick="setStatus(${i.id}, 'missing')">Missing</button>` : ''}
           ${i.status !== 'active' ? `<button class="btn btn-sm btn-success" onclick="setStatus(${i.id}, 'active')">Restore</button>` : ''}
@@ -253,10 +293,50 @@
     `).join("");
   }
 
+  function openEdit(id) {
+    const i = allItems.find(x => x.id === id);
+    if (!i) return;
+    editingId = id;
+    document.getElementById("edit-tag").value = i.tag || '';
+    document.getElementById("edit-name").value = i.name || '';
+    document.getElementById("edit-desc").value = i.description || '';
+    document.getElementById("edit-locker").value = i.locker || '';
+    document.getElementById("edit-mfg").value = i.manufactured_date || '';
+    document.getElementById("edit-condition").value = i.condition_notes || '';
+    document.getElementById("edit-borrowed").value = i.borrowed_by_email || '';
+    document.getElementById("edit-modal").classList.add("open");
+  }
+
+  function closeEdit() {
+    editingId = null;
+    document.getElementById("edit-modal").classList.remove("open");
+  }
+
+  async function saveEdit() {
+    if (!editingId) return;
+    const payload = {
+      tag: document.getElementById("edit-tag").value.trim() || null,
+      name: document.getElementById("edit-name").value.trim() || null,
+      description: document.getElementById("edit-desc").value.trim() || null,
+      locker: document.getElementById("edit-locker").value || null,
+      manufactured_date: document.getElementById("edit-mfg").value.trim() || null,
+      condition_notes: document.getElementById("edit-condition").value.trim() || null,
+      borrowed_by_email: document.getElementById("edit-borrowed").value.trim() || null,
+    };
+    // strip nulls so exclude_none works on backend
+    Object.keys(payload).forEach(k => payload[k] === null && delete payload[k]);
+    try {
+      await apiFetch(`/items/${editingId}`, { method: "PUT", body: JSON.stringify(payload) });
+      msg("✓ Item updated.");
+      closeEdit();
+      await loadItems();
+    } catch (e) { msg(e.message, true); }
+  }
+
   async function createItem() {
     const name = document.getElementById("new-item-name").value.trim();
     const description = document.getElementById("new-item-desc").value.trim();
-    const tag = parseInt(document.getElementById("new-item-tag").value) || null;
+    const tag = document.getElementById("new-item-tag").value.trim() || null;
     const locker = document.getElementById("new-item-locker").value || null;
     if (!name) return;
     try {
@@ -438,3 +518,4 @@
 </script>
 </body>
 </html>
+
