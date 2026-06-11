@@ -29,6 +29,7 @@ HEADERS = [
     "tag",
     "name",
     "description",
+    "category",
     "locker",
     "status",
     "available",
@@ -37,7 +38,7 @@ HEADERS = [
     "borrowed_by",   # human-readable alias for borrowed_by_email
 ]
 
-COL_WIDTHS = [8, 22, 35, 12, 10, 10, 22, 30, 25]
+COL_WIDTHS = [8, 22, 35, 16, 12, 10, 10, 22, 30, 25]
 
 STATUS_BG = {
     "active":   ("FFFFFF", "F0F5FF"),   # (even row, odd row)
@@ -70,7 +71,7 @@ def write_sheet(ws, rows):
     dfont = Font(name="Arial", size=9)
     center = Alignment(horizontal="center", vertical="center")
     left = Alignment(vertical="center")
-    CENTER_COLS = {"tag", "locker", "status", "available"}
+    CENTER_COLS = {"tag", "category", "locker", "status", "available"}
 
     for ri, row in enumerate(rows, 2):
         s = row.get("status", "active")
@@ -101,6 +102,7 @@ def write_legend(wb):
         ("tag", "item tag number e.g. 001"),
         ("name", "item type: harness, cam, quickdraw, helmet, etc."),
         ("description", "model/spec e.g. BD C4 size 1 red"),
+        ("category", "harness | pad | rope | cam | quickdraw | nut | carabiner | helmet | belay_device | sling | rope_protector | misc_trad | misc"),
         ("locker", "outdoor | top | bottom | pad | (blank = retired/missing)"),
         ("status", "active | retired | missing"),
         ("available", "TRUE = in locker; FALSE = on loan or unavailable"),
@@ -139,7 +141,7 @@ def main():
 
     cur.execute("""
         SELECT
-            tag, name, description, locker, status, available,
+            tag, name, description, category, locker, status, available,
             manufactured_date, condition_notes, borrowed_by_email
         FROM items
         ORDER BY

@@ -106,6 +106,68 @@ def create_loan(
     return db_loan
 
 
+@router.put("/{loan_id}", response_model=schemas.LoanOut)
+def update_loan(
+    loan_id: int,
+    update: schemas.LoanUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_approved_user)
+):
+    loan = db.query(models.Loan).filter(
+        models.Loan.id == loan_id,
+        models.Loan.user_id == current_user.id
+    ).first()
+    if not loan:
+        raise HTTPException(status_code=404, detail="Loan not found")
+    if loan.status not in ("pending", "active"):
+        raise HTTPException(status_code=400, detail="Can only edit pending or active loans")
+
+    changes = []
+
+    if update.due_date is not None:
+        loan.due_date = update.due_date
+        changes.append(f"due_date={update.due_date.strftime('%Y-%m-%d')}")
+
+    if update.item_ids is not None:
+        # Free previously-held items that are being removed
+        removed_ids = set(loan.item_ids) - set(update.item_ids)
+        added_ids = set(update.item_ids) - set(loan.item_ids)
+
+        for item_id in removed_ids:
+            item = db.query(models.Item).filter(models.Item.id == item_id).first()
+            if item and loan.status == "active":
+                item.available = True
+
+        for item_id in added_ids:
+            item = db.query(models.Item).filter(
+                models.Item.id == item_id,
+                models.Item.available == True,
+                models.Item.status == "active",
+            ).first()
+            if not item:
+                raise HTTPException(status_code=400, detail=f"Item {item_id} not available")
+            if loan.status == "active":
+                item.available = False
+
+        loan.item_ids = update.item_ids
+
+        # Recompute lockers
+        all_items = [db.query(models.Item).get(i) for i in update.item_ids]
+        involved_lockers = list(set(i.locker for i in all_items if i and i.locker))
+        loan.lockers = involved_lockers
+
+        changes.append(f"item_ids={update.item_ids}")
+
+    db.add(models.AuditLog(
+        user_id=current_user.id,
+        action="loan_updated",
+        details=f"Loan {loan_id}: {', '.join(changes)}"
+    ))
+    db.commit()
+    db.refresh(db_loan := loan)
+    return db_loan
+
+
 @router.post("/{loan_id}/photos")
 def upload_photo(
     loan_id: int,

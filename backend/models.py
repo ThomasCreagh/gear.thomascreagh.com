@@ -13,6 +13,38 @@ LOCKER_LABELS = {
 
 ITEM_STATUSES = ["active", "retired", "missing"]
 
+CATEGORIES = [
+    "harness",
+    "pad",
+    "rope",
+    "cam",
+    "quickdraw",
+    "nut",
+    "carabiner",
+    "helmet",
+    "belay_device",
+    "sling",
+    "rope_protector",
+    "misc_trad",
+    "misc",
+]
+
+CATEGORY_LABELS = {
+    "harness": "Harness",
+    "pad": "Pad",
+    "rope": "Rope",
+    "cam": "Cam",
+    "quickdraw": "Quickdraw",
+    "nut": "Nut",
+    "carabiner": "Carabiner",
+    "helmet": "Helmet",
+    "belay_device": "Belay Device",
+    "sling": "Sling",
+    "rope_protector": "Rope Protector",
+    "misc_trad": "Misc Trad",
+    "misc": "Misc",
+}
+
 
 class User(Base):
     __tablename__ = "users"
@@ -42,6 +74,8 @@ class Item(Base):
     tag = Column(String)
     # outdoor | top | bottom | pad
     locker = Column(String)
+    # category: harness | cam | rope | etc.
+    category = Column(String)
     available = Column(Boolean, default=True)       # False when on loan
     # active | retired | missing
     status = Column(String, default="active")

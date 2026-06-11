@@ -23,7 +23,7 @@
     .badge-yellow { background:#fff3cd; color:#856404; }
     .modal-bg { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:100; align-items:center; justify-content:center; }
     .modal-bg.open { display:flex; }
-    .modal { background:var(--card-bg, #fff); border-radius:var(--radius); padding:1.5rem; width:420px; max-width:95vw; display:flex; flex-direction:column; gap:0.6rem; }
+    .modal { background:var(--card-bg, #fff); border-radius:var(--radius); padding:1.5rem; width:420px; max-width:95vw; display:flex; flex-direction:column; gap:0.6rem; max-height:90vh; overflow-y:auto; }
     .modal h2 { margin:0 0 0.5rem; }
     .modal label { font-size:0.8rem; font-weight:600; margin-top:0.3rem; }
     .modal input, .modal select { margin:0; }
@@ -48,6 +48,23 @@
     <input type="text" id="edit-name">
     <label>Description</label>
     <input type="text" id="edit-desc">
+    <label>Category</label>
+    <select id="edit-category">
+      <option value="">— None —</option>
+      <option value="harness">Harness</option>
+      <option value="pad">Pad</option>
+      <option value="rope">Rope</option>
+      <option value="cam">Cam</option>
+      <option value="quickdraw">Quickdraw</option>
+      <option value="nut">Nut</option>
+      <option value="carabiner">Carabiner</option>
+      <option value="helmet">Helmet</option>
+      <option value="belay_device">Belay Device</option>
+      <option value="sling">Sling</option>
+      <option value="rope_protector">Rope Protector</option>
+      <option value="misc_trad">Misc Trad</option>
+      <option value="misc">Misc</option>
+    </select>
     <label>Locker</label>
     <select id="edit-locker">
       <option value="">— None —</option>
@@ -73,6 +90,7 @@
   <span class="logo">⛺ Gear Admin</span>
   <div>
     <a href="gear.html">Browse</a>
+    <a href="myloans.html">My Loans</a>
     <a href="#" onclick="logout()">Logout</a>
   </div>
 </nav>
@@ -121,6 +139,23 @@
       <label>Name</label><input type="text" id="new-item-name" placeholder="Tent, Sleeping Bag...">
       <label>Description</label><input type="text" id="new-item-desc" placeholder="Optional">
       <label>Tag #</label><input type="text" id="new-item-tag" placeholder="e.g. 042" style="width:120px">
+      <label>Category</label>
+      <select id="new-item-category">
+        <option value="">— None —</option>
+        <option value="harness">Harness</option>
+        <option value="pad">Pad</option>
+        <option value="rope">Rope</option>
+        <option value="cam">Cam</option>
+        <option value="quickdraw">Quickdraw</option>
+        <option value="nut">Nut</option>
+        <option value="carabiner">Carabiner</option>
+        <option value="helmet">Helmet</option>
+        <option value="belay_device">Belay Device</option>
+        <option value="sling">Sling</option>
+        <option value="rope_protector">Rope Protector</option>
+        <option value="misc_trad">Misc Trad</option>
+        <option value="misc">Misc</option>
+      </select>
       <label>Locker</label>
       <select id="new-item-locker">
         <option value="">-- Select --</option>
@@ -133,7 +168,7 @@
     </div>
     <div class="card">
       <table>
-        <thead><tr><th>Tag</th><th>Name</th><th>Locker</th><th>Available</th><th>Status</th><th>Actions</th></tr></thead>
+        <thead><tr><th>Tag</th><th>Name</th><th>Category</th><th>Locker</th><th>Available</th><th>Status</th><th>Actions</th></tr></thead>
         <tbody id="items-table"></tbody>
       </table>
     </div>
@@ -199,6 +234,11 @@
 <script src="static/api.js"></script>
 <script>
   const LOCKER_LABELS = { outdoor: "Outdoor Locker", top: "Top Locker", bottom: "Bottom Locker", pad: "Pad Stash" };
+  const CATEGORY_LABELS = {
+    harness:"Harness", pad:"Pad", rope:"Rope", cam:"Cam", quickdraw:"Quickdraw",
+    nut:"Nut", carabiner:"Carabiner", helmet:"Helmet", belay_device:"Belay Device",
+    sling:"Sling", rope_protector:"Rope Protector", misc_trad:"Misc Trad", misc:"Misc"
+  };
   let allUsers = [], allItems = [], allLoans = [];
   let editingId = null;
 
@@ -274,6 +314,7 @@
       <tr style="${i.status !== 'active' ? 'opacity:0.5' : ''}">
         <td><span class="badge badge-gray">#${i.tag ?? '—'}</span></td>
         <td>${i.name}</td>
+        <td>${i.category ? `<span class="badge badge-gray">${CATEGORY_LABELS[i.category] || i.category}</span>` : '—'}</td>
         <td>${i.locker ? `<span class="badge badge-gray">${LOCKER_LABELS[i.locker] || i.locker}</span>` : '—'}</td>
         <td><span class="badge ${i.available ? 'badge-green' : 'badge-red'}">${i.available ? 'Yes' : 'No'}</span></td>
         <td>${
@@ -300,6 +341,7 @@
     document.getElementById("edit-tag").value = i.tag || '';
     document.getElementById("edit-name").value = i.name || '';
     document.getElementById("edit-desc").value = i.description || '';
+    document.getElementById("edit-category").value = i.category || '';
     document.getElementById("edit-locker").value = i.locker || '';
     document.getElementById("edit-mfg").value = i.manufactured_date || '';
     document.getElementById("edit-condition").value = i.condition_notes || '';
@@ -318,12 +360,12 @@
       tag: document.getElementById("edit-tag").value.trim() || null,
       name: document.getElementById("edit-name").value.trim() || null,
       description: document.getElementById("edit-desc").value.trim() || null,
+      category: document.getElementById("edit-category").value || null,
       locker: document.getElementById("edit-locker").value || null,
       manufactured_date: document.getElementById("edit-mfg").value.trim() || null,
       condition_notes: document.getElementById("edit-condition").value.trim() || null,
       borrowed_by_email: document.getElementById("edit-borrowed").value.trim() || null,
     };
-    // strip nulls so exclude_none works on backend
     Object.keys(payload).forEach(k => payload[k] === null && delete payload[k]);
     try {
       await apiFetch(`/items/${editingId}`, { method: "PUT", body: JSON.stringify(payload) });
@@ -337,10 +379,11 @@
     const name = document.getElementById("new-item-name").value.trim();
     const description = document.getElementById("new-item-desc").value.trim();
     const tag = document.getElementById("new-item-tag").value.trim() || null;
+    const category = document.getElementById("new-item-category").value || null;
     const locker = document.getElementById("new-item-locker").value || null;
     if (!name) return;
     try {
-      await apiFetch("/items", { method: "POST", body: JSON.stringify({ name, description, tag, locker }) });
+      await apiFetch("/items", { method: "POST", body: JSON.stringify({ name, description, tag, category, locker }) });
       msg("✓ Item added."); toggleForm("create-item-form"); await loadItems();
     } catch (e) { msg(e.message, true); }
   }
@@ -518,4 +561,3 @@
 </script>
 </body>
 </html>
-

@@ -10,6 +10,38 @@ LOCKER_LABELS = {
     "pad": "Pad Stash",
 }
 
+CATEGORIES = [
+    "harness",
+    "pad",
+    "rope",
+    "cam",
+    "quickdraw",
+    "nut",
+    "carabiner",
+    "helmet",
+    "belay_device",
+    "sling",
+    "rope_protector",
+    "misc_trad",
+    "misc",
+]
+
+CATEGORY_LABELS = {
+    "harness": "Harness",
+    "pad": "Pad",
+    "rope": "Rope",
+    "cam": "Cam",
+    "quickdraw": "Quickdraw",
+    "nut": "Nut",
+    "carabiner": "Carabiner",
+    "helmet": "Helmet",
+    "belay_device": "Belay Device",
+    "sling": "Sling",
+    "rope_protector": "Rope Protector",
+    "misc_trad": "Misc Trad",
+    "misc": "Misc",
+}
+
 # Auth
 
 
@@ -45,6 +77,7 @@ class ItemCreate(BaseModel):
     description: Optional[str] = None
     tag: Optional[str] = None
     locker: Optional[str] = None
+    category: Optional[str] = None
     status: Optional[str] = "active"
     manufactured_date: Optional[str] = None
     condition_notes: Optional[str] = None
@@ -56,6 +89,7 @@ class ItemUpdate(BaseModel):
     description: Optional[str] = None
     tag: Optional[str] = None
     locker: Optional[str] = None
+    category: Optional[str] = None
     available: Optional[bool] = None
     status: Optional[str] = None
     manufactured_date: Optional[str] = None
@@ -69,6 +103,7 @@ class ItemOut(BaseModel):
     description: Optional[str]
     tag: Optional[str]
     locker: Optional[str]
+    category: Optional[str]
     available: bool
     status: str
     manufactured_date: Optional[str]
@@ -98,6 +133,11 @@ class LoanPhotoOut(BaseModel):
 class LoanCreate(BaseModel):
     item_ids: List[int]
     days: int
+
+
+class LoanUpdate(BaseModel):
+    item_ids: Optional[List[int]] = None
+    due_date: Optional[datetime] = None
 
 
 class LoanOut(BaseModel):

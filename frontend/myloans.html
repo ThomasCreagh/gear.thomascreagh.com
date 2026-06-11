@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gear — My Loans</title>
+  <link rel="stylesheet" href="static/style.css">
+  <style>
+    .photo-card { border:2px dashed var(--border); border-radius:var(--radius); padding:0.85rem; margin-bottom:0.6rem; }
+    .photo-card.done { border-color:var(--success); background:#f0fff4; }
+    .photo-card h4 { margin-bottom:0.4rem; font-size:0.9rem; }
+
+    .past-loans-toggle {
+      background:none; border:none; cursor:pointer; font-size:0.9rem;
+      color:var(--muted); padding:0.5rem 0; display:flex; align-items:center; gap:0.4rem;
+    }
+    .past-loans-toggle:hover { color:var(--text); }
+
+    .step-label {
+      font-size:0.75rem; font-weight:700; text-transform:uppercase;
+      letter-spacing:0.05em; color:var(--muted); margin-bottom:0.5rem;
+    }
+
+    .edit-panel {
+      border-top:1px solid var(--border); margin-top:1rem; padding-top:1rem;
+      display:none;
+    }
+    .edit-panel.open { display:block; }
+
+    .chip-list { display:flex; flex-wrap:wrap; gap:0.4rem; margin-bottom:0.75rem; }
+    .chip {
+      display:inline-flex; align-items:center; gap:0.3rem;
+      background:#e8eaf6; border-radius:20px; padding:0.25rem 0.6rem;
+      font-size:0.8rem;
+    }
+    .chip button {
+      background:none; border:none; cursor:pointer; color:var(--muted);
+      font-size:0.9rem; padding:0; line-height:1;
+    }
+    .chip button:hover { color:var(--danger); }
+
+    .search-results { border:1px solid var(--border); border-radius:var(--radius); max-height:200px; overflow-y:auto; margin-top:0.25rem; }
+    .search-result-item {
+      padding:0.5rem 0.75rem; cursor:pointer; font-size:0.85rem;
+      border-bottom:1px solid var(--border);
+    }
+    .search-result-item:last-child { border-bottom:none; }
+    .search-result-item:hover { background:var(--bg); }
+    .search-result-item.unavailable { opacity:0.45; cursor:not-allowed; }
+
+    .return-section { border-top:2px solid var(--border); margin-top:1.25rem; padding-top:1rem; }
+  </style>
+</head>
+<body>
+<nav>
+  <span class="logo">⛺ Gear</span>
+  <div>
+    <a href="gear.html">Browse</a>
+    <a href="myloans.html" style="font-weight:700">My Loans</a>
+    <a href="return.html">Return</a>
+    <a href="#" onclick="logout()">Logout</a>
+  </div>
+</nav>
+
+<div class="container">
+  <h1>My Loans</h1>
+  <div class="alert alert-error" id="error"></div>
+  <div class="alert alert-success" id="success"></div>
+  <div id="active-section"></div>
+
+  <div style="margin-top:2rem">
+    <button class="past-loans-toggle" id="past-toggle" onclick="togglePast()">▶ Past loans</button>
+    <div id="past-section" style="display:none"></div>
+  </div>
+</div>
+
+<script src="static/api.js"></script>
+<script>
+  requireAuth();
+
+  const LOCKER_LABELS = { outdoor: "Outdoor Locker", top: "Top Locker", bottom: "Bottom Locker", pad: "Pad Stash" };
+  const CATEGORY_LABELS = {
+    harness:"Harness", pad:"Pad", rope:"Rope", cam:"Cam", quickdraw:"Quickdraw",
+    nut:"Nut", carabiner:"Carabiner", helmet:"Helmet", belay_device:"Belay Device",
+    sling:"Sling", rope_protector:"Rope Protector", misc_trad:"Misc Trad", misc:"Misc"
+  };
+
+  let allItems = [];
+  let allLoans = [];
+  let editState = {}; // loanId → { item_ids: [...], due_date: "..." }
+
+  async function init() {
+    try {
+      [allLoans, allItems] = await Promise.all([apiFetch("/loans/my"), apiFetch("/items")]);
+      render();
+    } catch (e) { showError(document.getElementById("error"), e.message); }
+  }
+
+  function itemName(id) {
+    const item = allItems.find(i => i.id === id);
+    return item ? (item.tag ? `#${item.tag} ${item.name}` : item.name) : `#${id}`;
+  }
+
+  function render() {
+    const active = allLoans.filter(l => l.status === "active" || l.status === "pending");
+    const past = allLoans.filter(l => l.status === "returned" || l.status === "denied");
+
+    const activeEl = document.getElementById("active-section");
+    if (!active.length) {
+      activeEl.innerHTML = `<div class="card"><p style="color:var(--muted);text-align:center">No active loans. <a href="gear.html">Browse gear →</a></p></div>`;
+    } else {
+      activeEl.innerHTML = active.map(loan => renderActiveLoan(loan)).join("");
+    }
+
+    const pastEl = document.getElementById("past-section");
+    pastEl.innerHTML = past.length
+      ? past.map(loan => renderPastLoan(loan)).join("")
+      : `<p style="color:var(--muted);font-size:0.9rem;padding:0.5rem 0">No past loans.</p>`;
+  }
+
+  function renderActiveLoan(loan) {
+    const isPending = loan.status === "pending";
+    const due = loan.due_date ? new Date(loan.due_date).toLocaleDateString() : "—";
+    const overdue = loan.due_date && !isPending && new Date(loan.due_date) < new Date();
+    const names = loan.item_ids.map(id => itemName(id)).join(", ");
+
+    const es = editState[loan.id] || { item_ids: [...loan.item_ids], due_date: loan.due_date ? loan.due_date.slice(0,10) : "" };
+
+    // Borrow photos section
+    const borrowPhotos = isPending ? "" : (loan.lockers || []).map(locker => {
+      const done = loan.photos.some(p => p.locker === locker && p.photo_type === "borrow");
+      return `
+        <div class="photo-card ${done ? 'done' : ''}">
+          <h4>${done ? '✓' : '📷'} ${LOCKER_LABELS[locker] || locker} — Borrow photo</h4>
+          ${done
+            ? `<span class="badge badge-green">Uploaded</span>`
+            : `<label class="btn btn-sm btn-secondary" style="cursor:pointer">Upload
+                <input type="file" accept="image/*" style="display:none" onchange="uploadPhoto(${loan.id}, '${locker}', 'borrow', this)">
+              </label>`
+          }
+        </div>`;
+    }).join("");
+
+    // Return photos + button section
+    const returnPhotos = isPending ? "" : (loan.lockers || []).map(locker => {
+      const done = loan.photos.some(p => p.locker === locker && p.photo_type === "return");
+      return `
+        <div class="photo-card ${done ? 'done' : ''}">
+          <h4>${done ? '✓' : '📷'} ${LOCKER_LABELS[locker] || locker} — Return photo</h4>
+          ${done
+            ? `<span class="badge badge-green">Uploaded ✓</span>`
+            : `<p style="font-size:0.75rem;color:var(--danger);margin-bottom:0.4rem">Required before confirming return</p>
+               <label class="btn btn-sm btn-secondary" style="cursor:pointer">Upload
+                 <input type="file" accept="image/*" style="display:none" onchange="uploadPhoto(${loan.id}, '${locker}', 'return', this)">
+               </label>`
+          }
+        </div>`;
+    }).join("");
+
+    const allReturnDone = !isPending && (loan.lockers || []).every(locker =>
+      loan.photos.some(p => p.locker === locker && p.photo_type === "return")
+    );
+
+    // Edit panel
+    const chipHtml = es.item_ids.map(id => `
+      <span class="chip">
+        ${itemName(id)}
+        <button onclick="removeChip(${loan.id}, ${id})" title="Remove">×</button>
+      </span>`).join("");
+
+    return `
+      <div class="card" id="loan-card-${loan.id}" style="margin-bottom:1rem">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:0.75rem">
+          <div>
+            <strong>${names}</strong>
+            <div style="font-size:0.8rem;color:var(--muted);margin-top:0.2rem">
+              Due: ${due}${overdue ? ' <span style="color:var(--danger)">⚠ Overdue</span>' : ''}
+            </div>
+          </div>
+          <span class="badge ${isPending ? 'badge-yellow' : overdue ? 'badge-red' : 'badge-green'}">
+            ${isPending ? 'Pending approval' : overdue ? 'Overdue' : 'Active'}
+          </span>
+        </div>
+
+        ${!isPending && borrowPhotos ? `
+          <div class="step-label">Step 1 — Collect gear</div>
+          ${borrowPhotos}
+        ` : ''}
+
+        ${!isPending ? `
+          <div class="return-section">
+            <div class="step-label">Step 2 — Return gear</div>
+            ${returnPhotos}
+            <button type="button" class="btn btn-success" style="margin-top:0.5rem ${allReturnDone ? '' : ';opacity:0.4;cursor:not-allowed'}"
+              ${allReturnDone ? `onclick="confirmReturn(${loan.id})"` : 'disabled'}>
+              ${allReturnDone ? 'Confirm Return' : 'Upload all return photos to enable'}
+            </button>
+          </div>
+        ` : ''}
+
+        <!-- Edit panel -->
+        <div class="edit-panel" id="edit-panel-${loan.id}">
+          <div class="step-label">Edit loan</div>
+
+          <div style="margin-bottom:0.75rem">
+            <label style="font-size:0.8rem;font-weight:600;margin-bottom:0.3rem">Items</label>
+            <div class="chip-list" id="chips-${loan.id}">${chipHtml}</div>
+            <input type="text" placeholder="Search by tag, name, or category…" id="search-${loan.id}"
+              oninput="searchItems(${loan.id})" style="margin-bottom:0.25rem">
+            <div class="search-results" id="results-${loan.id}" style="display:none"></div>
+          </div>
+
+          <div style="margin-bottom:0.75rem">
+            <label style="font-size:0.8rem;font-weight:600;margin-bottom:0.3rem">Due date</label>
+            <input type="date" id="due-${loan.id}" value="${es.due_date}" style="width:180px">
+          </div>
+
+          <div style="display:flex;gap:0.5rem">
+            <button class="btn btn-primary btn-sm" onclick="saveEdit(${loan.id})">Save changes</button>
+            <button class="btn btn-secondary btn-sm" onclick="closeEdit(${loan.id})">Cancel</button>
+          </div>
+        </div>
+
+        <div style="margin-top:0.75rem">
+          <button class="btn btn-sm btn-secondary" onclick="toggleEdit(${loan.id})">✏️ Edit loan</button>
+        </div>
+      </div>`;
+  }
+
+  function renderPastLoan(loan) {
+    const due = loan.due_date ? new Date(loan.due_date).toLocaleDateString() : "—";
+    const returned = loan.returned_at ? new Date(loan.returned_at).toLocaleDateString() : null;
+    const names = loan.item_ids.map(id => itemName(id)).join(", ");
+    return `
+      <div class="card" style="margin-bottom:0.75rem;opacity:0.8">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <strong style="font-size:0.9rem">${names}</strong>
+            <div style="font-size:0.75rem;color:var(--muted)">
+              Due ${due}${returned ? ` · Returned ${returned}` : ''}
+            </div>
+          </div>
+          <span class="badge ${loan.status === 'returned' ? 'badge-gray' : 'badge-red'}">
+            ${loan.status === 'returned' ? 'Returned' : 'Denied'}
+          </span>
+        </div>
+      </div>`;
+  }
+
+  function togglePast() {
+    const sec = document.getElementById("past-section");
+    const btn = document.getElementById("past-toggle");
+    const open = sec.style.display !== "none";
+    sec.style.display = open ? "none" : "block";
+    btn.textContent = (open ? "▶" : "▼") + " Past loans";
+  }
+
+  // --- Edit loan ---
+  function toggleEdit(loanId) {
+    const panel = document.getElementById(`edit-panel-${loanId}`);
+    const loan = allLoans.find(l => l.id === loanId);
+    if (!editState[loanId]) {
+      editState[loanId] = {
+        item_ids: [...loan.item_ids],
+        due_date: loan.due_date ? loan.due_date.slice(0,10) : ""
+      };
+    }
+    panel.classList.toggle("open");
+  }
+
+  function closeEdit(loanId) {
+    document.getElementById(`edit-panel-${loanId}`).classList.remove("open");
+    delete editState[loanId];
+    render();
+  }
+
+  function removeChip(loanId, itemId) {
+    if (!editState[loanId]) {
+      const loan = allLoans.find(l => l.id === loanId);
+      editState[loanId] = { item_ids: [...loan.item_ids], due_date: loan.due_date?.slice(0,10) || "" };
+    }
+    editState[loanId].item_ids = editState[loanId].item_ids.filter(id => id !== itemId);
+    renderChips(loanId);
+  }
+
+  function renderChips(loanId) {
+    const es = editState[loanId];
+    document.getElementById(`chips-${loanId}`).innerHTML = es.item_ids.map(id => `
+      <span class="chip">
+        ${itemName(id)}
+        <button onclick="removeChip(${loanId}, ${id})" title="Remove">×</button>
+      </span>`).join("");
+  }
+
+  function searchItems(loanId) {
+    const q = document.getElementById(`search-${loanId}`).value.trim().toLowerCase();
+    const resultsEl = document.getElementById(`results-${loanId}`);
+    if (!q) { resultsEl.style.display = "none"; return; }
+
+    const es = editState[loanId] || {};
+    const filtered = allItems.filter(item => {
+      if (item.status !== "active") return false;
+      const inLoan = (es.item_ids || []).includes(item.id);
+      const matchesQuery = (item.tag || "").toLowerCase().includes(q)
+        || item.name.toLowerCase().includes(q)
+        || (item.category || "").toLowerCase().includes(q)
+        || (CATEGORY_LABELS[item.category] || "").toLowerCase().includes(q)
+        || (item.description || "").toLowerCase().includes(q);
+      return matchesQuery && !inLoan;
+    }).slice(0, 10);
+
+    if (!filtered.length) { resultsEl.style.display = "none"; return; }
+
+    resultsEl.style.display = "block";
+    resultsEl.innerHTML = filtered.map(item => `
+      <div class="search-result-item ${item.available ? '' : 'unavailable'}"
+        onclick="${item.available ? `addItem(${loanId}, ${item.id})` : ''}">
+        ${item.tag ? `<span class="badge badge-gray">#${item.tag}</span> ` : ''}
+        ${item.name}
+        ${item.description ? `<span style="color:var(--muted);font-size:0.8rem"> — ${item.description}</span>` : ''}
+        ${item.available ? '' : ' <span style="color:var(--danger);font-size:0.75rem">(unavailable)</span>'}
+      </div>`).join("");
+  }
+
+  function addItem(loanId, itemId) {
+    if (!editState[loanId]) {
+      const loan = allLoans.find(l => l.id === loanId);
+      editState[loanId] = { item_ids: [...loan.item_ids], due_date: loan.due_date?.slice(0,10) || "" };
+    }
+    if (!editState[loanId].item_ids.includes(itemId)) {
+      editState[loanId].item_ids.push(itemId);
+    }
+    renderChips(loanId);
+    document.getElementById(`search-${loanId}`).value = "";
+    document.getElementById(`results-${loanId}`).style.display = "none";
+  }
+
+  async function saveEdit(loanId) {
+    const es = editState[loanId];
+    if (!es) return;
+    const payload = { item_ids: es.item_ids };
+    const dueVal = document.getElementById(`due-${loanId}`).value;
+    if (dueVal) payload.due_date = new Date(dueVal).toISOString();
+
+    const err = document.getElementById("error");
+    const suc = document.getElementById("success");
+    err.style.display = "none"; suc.style.display = "none";
+
+    try {
+      await apiFetch(`/loans/${loanId}`, { method: "PUT", body: JSON.stringify(payload) });
+      suc.textContent = "✓ Loan updated.";
+      suc.style.display = "block";
+      delete editState[loanId];
+      [allLoans, allItems] = await Promise.all([apiFetch("/loans/my"), apiFetch("/items")]);
+      render();
+    } catch (e) { showError(err, e.message); }
+  }
+
+  // --- Photos ---
+  async function uploadPhoto(loanId, locker, photoType, input) {
+    const file = input.files[0];
+    if (!file) return;
+    const fd = new FormData();
+    fd.append("locker", locker); fd.append("photo_type", photoType); fd.append("photo", file);
+    try {
+      await apiFetch(`/loans/${loanId}/photos`, { method: "POST", body: fd });
+      allLoans = await apiFetch("/loans/my");
+      render();
+    } catch (e) { showError(document.getElementById("error"), e.message); }
+  }
+
+  // --- Return ---
+  async function confirmReturn(loanId) {
+    const err = document.getElementById("error");
+    const suc = document.getElementById("success");
+    err.style.display = "none"; suc.style.display = "none";
+    try {
+      const result = await apiFetch(`/loans/${loanId}/return`, { method: "POST" });
+      suc.textContent = `✓ Return logged at ${new Date(result.returned_at).toLocaleString()}. Thank you!`;
+      suc.style.display = "block";
+      allLoans = await apiFetch("/loans/my");
+      render();
+    } catch (e) { showError(err, e.message); }
+  }
+
+  init();
+</script>
+</body>
+</html>

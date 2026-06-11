@@ -9,7 +9,7 @@ Usage:
 
 Reads DATABASE_URL from environment or .env file.
 Sheet must have columns matching the 'items' sheet from Club_Gear_DB.xlsx:
-    tag, name, description, locker, status, available,
+    tag, name, description, category, locker, status, available,
     manufactured_date, condition_notes, borrowed_by
 """
 
@@ -30,6 +30,7 @@ COLUMNS = [
     "tag",
     "name",
     "description",
+    "category",
     "locker",
     "status",
     "available",
@@ -40,6 +41,10 @@ COLUMNS = [
 
 VALID_STATUSES = {"active", "retired", "missing"}
 VALID_LOCKERS = {"outdoor", "top", "bottom", "pad", ""}
+VALID_CATEGORIES = {
+    "harness", "pad", "rope", "cam", "quickdraw", "nut", "carabiner",
+    "helmet", "belay_device", "sling", "rope_protector", "misc_trad", "misc", ""
+}
 
 
 def parse_bool(val) -> bool:
@@ -64,6 +69,10 @@ def clean_row(row) -> dict | None:
     if locker not in VALID_LOCKERS:
         locker = ""
 
+    category = str(row.get("category", "")).strip().lower()
+    if category not in VALID_CATEGORIES:
+        category = ""
+
     available = parse_bool(row.get("available", True))
     # Force unavailable if retired or missing
     if status in ("retired", "missing"):
@@ -77,6 +86,7 @@ def clean_row(row) -> dict | None:
         "tag": tag if tag and tag.lower() not in ("nan", "none") else None,
         "name": name,
         "description": str(row.get("description", "")).strip() or None,
+        "category": category or None,
         "locker": locker or None,
         "status": status,
         "available": available,
@@ -129,7 +139,7 @@ def main():
 
     sql = """
         INSERT INTO items
-            (tag, name, description, locker, status, available,
+            (tag, name, description, category, locker, status, available,
              manufactured_date, condition_notes, borrowed_by_email, created_at, updated_at)
         VALUES %s
         ON CONFLICT DO NOTHING
@@ -138,9 +148,9 @@ def main():
     now = datetime.utcnow()
     values = [
         (
-            r["tag"], r["name"], r["description"], r["locker"], r["status"],
-            r["available"], r["manufactured_date"], r["condition_notes"],
-            r["borrowed_by_email"], now, now
+            r["tag"], r["name"], r["description"], r["category"], r["locker"],
+            r["status"], r["available"], r["manufactured_date"],
+            r["condition_notes"], r["borrowed_by_email"], now, now
         )
         for r in rows
     ]

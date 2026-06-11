@@ -31,3 +31,6 @@ BEGIN
         ALTER TABLE items ALTER COLUMN tag TYPE VARCHAR USING LPAD(tag::text, 3, '0');
     END IF;
 END $$;
+
+-- Migration: add category column to items table
+ALTER TABLE items ADD COLUMN IF NOT EXISTS category VARCHAR;
