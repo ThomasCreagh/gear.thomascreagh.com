@@ -42,85 +42,132 @@ def get_locker_codes(db: Session, lockers: List[str]) -> dict:
     return codes
 
 
+def get_verification_code(db: Session) -> str | None:
+    row = (
+        db.query(models.VerificationCode)
+        .order_by(models.VerificationCode.id.desc())
+        .first()
+    )
+    return row.code if row else None
+
+
+# ---------------------------------------------------------------------------
+# Create loan — user is at the locker, picks which lockers + how many days.
+# No items selected yet; those are logged after opening the locker.
+# ---------------------------------------------------------------------------
 @router.post("", response_model=schemas.LoanOut)
 def create_loan(
     loan: schemas.LoanCreate,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_approved_user)
+    current_user: models.User = Depends(get_approved_user),
 ):
+    if current_user.is_locked:
+        raise HTTPException(
+            status_code=403, detail="Your account is locked due to overdue items.")
+
     if loan.days > MAX_LOAN_DAYS or loan.days < 1:
         raise HTTPException(
-            status_code=400, detail=f"Days must be 1-{MAX_LOAN_DAYS}")
+            status_code=400, detail=f"Days must be 1–{MAX_LOAN_DAYS}")
 
-    items = []
-    for item_id in loan.item_ids:
-        item = db.query(models.Item).filter(
-            models.Item.id == item_id,
-            models.Item.available == True,
-            models.Item.status == "active",
-        ).first()
-        if not item:
-            raise HTTPException(status_code=400, detail=f"Item {
-                                item_id} not available")
-        items.append(item)
+    valid_lockers = set(models.LOCKERS)
+    for locker in loan.lockers:
+        if locker not in valid_lockers:
+            raise HTTPException(
+                status_code=400, detail=f"Invalid locker: {locker}")
 
-    # Determine which lockers are involved
-    involved_lockers = list(set(i.locker for i in items if i.locker))
+    if not loan.lockers:
+        raise HTTPException(
+            status_code=400, detail="Select at least one locker")
+
     due_date = datetime.utcnow() + timedelta(days=loan.days)
-
-    if current_user.auto_approve:
-        # Issue locker codes immediately
-        locker_codes = get_locker_codes(db, involved_lockers)
-        status = "active"
-        for item in items:
-            item.available = False
-    else:
-        locker_codes = {}
-        status = "pending"
 
     db_loan = models.Loan(
         user_id=current_user.id,
-        item_ids=loan.item_ids,
-        locker_codes=locker_codes,
-        lockers=involved_lockers,
+        item_ids=[],
+        locker_codes=None,          # revealed only after verification
+        lockers=loan.lockers,
+        locker_verified=False,
         due_date=due_date,
-        status=status,
+        status="pending_verification",
     )
     db.add(db_loan)
     db.add(models.AuditLog(
         user_id=current_user.id,
         action="loan_created",
-        details=f"status={status}, items={
-            loan.item_ids}, lockers={involved_lockers}"
+        details=f"lockers={loan.lockers}, days={loan.days}",
     ))
     db.commit()
     db.refresh(db_loan)
-
-    item_names = [i.name for i in items]
-    if current_user.auto_approve:
-        send_loan_approved(current_user.email, locker_codes,
-                           due_date.strftime("%Y-%m-%d"), item_names)
-    else:
-        send_loan_pending_admin(current_user.email, item_names)
-
     return db_loan
 
 
+# ---------------------------------------------------------------------------
+# Verify — user enters the single in-person code; receives locker unlock codes.
+# Can be called for both borrow (pending_verification) and return (active).
+# ---------------------------------------------------------------------------
+@router.post("/{loan_id}/verify", response_model=schemas.LoanVerifyResponse)
+def verify_loan(
+    loan_id: int,
+    body: schemas.LoanVerifyRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_approved_user),
+):
+    loan = db.query(models.Loan).filter(
+        models.Loan.id == loan_id,
+        models.Loan.user_id == current_user.id,
+    ).first()
+    if not loan:
+        raise HTTPException(status_code=404, detail="Loan not found")
+    if loan.status not in ("pending_verification", "active"):
+        raise HTTPException(
+            status_code=400, detail="This loan cannot be verified at this stage")
+
+    correct = get_verification_code(db)
+    if correct is None:
+        raise HTTPException(
+            status_code=503, detail="Verification code not configured. Contact Tom.")
+    if body.verification_code.strip() != correct.strip():
+        raise HTTPException(
+            status_code=403, detail="Incorrect verification code")
+
+    # Reveal locker codes and activate
+    locker_codes = get_locker_codes(db, loan.lockers or [])
+    loan.locker_codes = locker_codes
+    loan.locker_verified = True
+
+    if loan.status == "pending_verification":
+        loan.status = "active"
+        db.add(models.AuditLog(
+            user_id=current_user.id,
+            action="loan_verified",
+            details=f"Loan {loan_id} verified, codes issued for {
+                loan.lockers}",
+        ))
+
+    db.commit()
+    db.refresh(loan)
+    return schemas.LoanVerifyResponse(locker_codes=locker_codes, due_date=loan.due_date)
+
+
+# ---------------------------------------------------------------------------
+# Update loan — log which items were actually taken
+# ---------------------------------------------------------------------------
 @router.put("/{loan_id}", response_model=schemas.LoanOut)
 def update_loan(
     loan_id: int,
     update: schemas.LoanUpdate,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_approved_user)
+    current_user: models.User = Depends(get_approved_user),
 ):
     loan = db.query(models.Loan).filter(
         models.Loan.id == loan_id,
-        models.Loan.user_id == current_user.id
+        models.Loan.user_id == current_user.id,
     ).first()
     if not loan:
         raise HTTPException(status_code=404, detail="Loan not found")
-    if loan.status not in ("pending", "active"):
-        raise HTTPException(status_code=400, detail="Can only edit pending or active loans")
+    if loan.status != "active":
+        raise HTTPException(
+            status_code=400, detail="Can only edit active loans")
 
     changes = []
 
@@ -129,13 +176,13 @@ def update_loan(
         changes.append(f"due_date={update.due_date.strftime('%Y-%m-%d')}")
 
     if update.item_ids is not None:
-        # Free previously-held items that are being removed
         removed_ids = set(loan.item_ids) - set(update.item_ids)
         added_ids = set(update.item_ids) - set(loan.item_ids)
 
         for item_id in removed_ids:
-            item = db.query(models.Item).filter(models.Item.id == item_id).first()
-            if item and loan.status == "active":
+            item = db.query(models.Item).filter(
+                models.Item.id == item_id).first()
+            if item:
                 item.available = True
 
         for item_id in added_ids:
@@ -145,52 +192,48 @@ def update_loan(
                 models.Item.status == "active",
             ).first()
             if not item:
-                raise HTTPException(status_code=400, detail=f"Item {item_id} not available")
-            if loan.status == "active":
-                item.available = False
+                raise HTTPException(status_code=400, detail=f"Item {
+                                    item_id} not available")
+            item.available = False
 
         loan.item_ids = update.item_ids
-
-        # Recompute lockers
-        all_items = [db.query(models.Item).get(i) for i in update.item_ids]
-        involved_lockers = list(set(i.locker for i in all_items if i and i.locker))
-        loan.lockers = involved_lockers
-
         changes.append(f"item_ids={update.item_ids}")
 
     db.add(models.AuditLog(
         user_id=current_user.id,
         action="loan_updated",
-        details=f"Loan {loan_id}: {', '.join(changes)}"
+        details=f"Loan {loan_id}: {', '.join(changes)}",
     ))
     db.commit()
-    db.refresh(db_loan := loan)
-    return db_loan
+    db.refresh(loan)
+    return loan
 
 
+# ---------------------------------------------------------------------------
+# Upload photo
+# ---------------------------------------------------------------------------
 @router.post("/{loan_id}/photos")
 def upload_photo(
     loan_id: int,
     locker: str = Form(...),
-    photo_type: str = Form(...),  # borrow | return
+    photo_type: str = Form(...),   # borrow | return
     photo: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_approved_user)
+    current_user: models.User = Depends(get_approved_user),
 ):
     loan = db.query(models.Loan).filter(
         models.Loan.id == loan_id,
-        models.Loan.user_id == current_user.id
+        models.Loan.user_id == current_user.id,
     ).first()
     if not loan:
         raise HTTPException(status_code=404, detail="Loan not found")
     if locker not in (loan.lockers or []):
-        raise HTTPException(status_code=400, detail=f"Locker {
-                            locker} not part of this loan")
+        raise HTTPException(status_code=400, detail=f"Locker '{
+                            locker}' not part of this loan")
     if photo_type not in ("borrow", "return"):
         raise HTTPException(
-            status_code=400, detail="photo_type must be borrow or return")
+            status_code=400, detail="photo_type must be 'borrow' or 'return'")
 
-    # Replace existing photo for same locker+type if exists
     existing = db.query(models.LoanPhoto).filter(
         models.LoanPhoto.loan_id == loan_id,
         models.LoanPhoto.locker == locker,
@@ -202,52 +245,54 @@ def upload_photo(
         db.delete(existing)
 
     path = save_photo(photo)
-    db_photo = models.LoanPhoto(
+    db.add(models.LoanPhoto(
         loan_id=loan_id,
         locker=locker,
         photo_type=photo_type,
         file_path=path,
-    )
-    db.add(db_photo)
+    ))
     db.add(models.AuditLog(
         user_id=current_user.id,
         action=f"photo_{photo_type}",
-        details=f"Loan {loan_id}, locker: {locker}"
+        details=f"Loan {loan_id}, locker: {locker}",
     ))
     db.commit()
     return {"message": "Photo uploaded", "path": path}
 
 
+# ---------------------------------------------------------------------------
+# Return loan
+# ---------------------------------------------------------------------------
 @router.post("/{loan_id}/return")
 def return_loan(
     loan_id: int,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_approved_user)
+    current_user: models.User = Depends(get_approved_user),
 ):
     loan = db.query(models.Loan).filter(
         models.Loan.id == loan_id,
-        models.Loan.user_id == current_user.id
+        models.Loan.user_id == current_user.id,
     ).first()
     if not loan:
         raise HTTPException(status_code=404, detail="Loan not found")
     if loan.status == "returned":
         raise HTTPException(status_code=400, detail="Already returned")
+    if loan.status != "active":
+        raise HTTPException(status_code=400, detail="Loan is not active")
 
-    # Enforce all return photos uploaded
     required_lockers = set(loan.lockers or [])
-    uploaded_lockers = set(
-        p.locker for p in loan.photos if p.photo_type == "return"
-    )
+    uploaded_lockers = {
+        p.locker for p in loan.photos if p.photo_type == "return"}
     missing = required_lockers - uploaded_lockers
     if missing:
         labels = [models.LOCKER_LABELS.get(l, l) for l in missing]
-        raise HTTPException(
-            status_code=400,
-            detail=f"Missing return photos for: {', '.join(labels)}"
-        )
+        raise HTTPException(status_code=400, detail=f"Missing return photos for: {
+                            ', '.join(labels)}")
 
     loan.status = "returned"
     loan.returned_at = datetime.utcnow()
+    # Hide locker codes now that return is complete
+    loan.locker_codes = None
 
     for item_id in loan.item_ids:
         item = db.query(models.Item).filter(models.Item.id == item_id).first()
@@ -257,61 +302,83 @@ def return_loan(
     db.add(models.AuditLog(
         user_id=current_user.id,
         action="returned",
-        details=f"Loan {loan_id}"
+        details=f"Loan {loan_id}",
     ))
     db.commit()
     return {"message": "Return logged", "returned_at": loan.returned_at}
 
 
+# ---------------------------------------------------------------------------
+# My loans
+# ---------------------------------------------------------------------------
 @router.get("/my", response_model=List[schemas.LoanOut])
 def my_loans(
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_approved_user)
+    current_user: models.User = Depends(get_approved_user),
 ):
-    return db.query(models.Loan).filter(models.Loan.user_id == current_user.id).all()
+    return (
+        db.query(models.Loan)
+        .filter(models.Loan.user_id == current_user.id)
+        .order_by(models.Loan.created_at.desc())
+        .all()
+    )
 
 
-# Admin: approve/deny pending loan
+# ---------------------------------------------------------------------------
+# Admin: set the global verification code
+# ---------------------------------------------------------------------------
+@router.get("/admin/verification-code")
+def get_verification_code_admin(
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(get_admin_user),
+):
+    code = get_verification_code(db)
+    return {"code": code or "Not set"}
+
+
+@router.post("/admin/verification-code")
+def set_verification_code(
+    body: schemas.VerificationCodeUpdate,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(get_admin_user),
+):
+    db.add(models.VerificationCode(code=body.code, updated_by=admin.id))
+    db.add(models.AuditLog(
+        user_id=admin.id,
+        action="verification_code_updated",
+        details="Global verification code changed",
+    ))
+    db.commit()
+    return {"message": "Verification code updated"}
+
+
+# ---------------------------------------------------------------------------
+# Admin: approve / deny (kept for edge cases; codes still gate-kept by verify)
+# ---------------------------------------------------------------------------
 @router.post("/{loan_id}/approve")
 def approve_loan(
     loan_id: int,
     db: Session = Depends(get_db),
-    admin: models.User = Depends(get_admin_user)
+    admin: models.User = Depends(get_admin_user),
 ):
     loan = db.query(models.Loan).filter(models.Loan.id == loan_id).first()
-    if not loan or loan.status != "pending":
-        raise HTTPException(status_code=404, detail="Pending loan not found")
-
-    items = [db.query(models.Item).get(i) for i in loan.item_ids]
-    for item in items:
-        if item:
-            item.available = False
-
-    locker_codes = get_locker_codes(db, loan.lockers or [])
-    loan.locker_codes = locker_codes
-    loan.status = "active"
-
+    if not loan:
+        raise HTTPException(status_code=404, detail="Loan not found")
     db.add(models.AuditLog(user_id=admin.id,
            action="loan_approved", details=f"Loan {loan_id}"))
     db.commit()
-
-    user = db.query(models.User).get(loan.user_id)
-    item_names = [i.name for i in items if i]
-    send_loan_approved(user.email, locker_codes,
-                       loan.due_date.strftime("%Y-%m-%d"), item_names)
-    return {"message": "Loan approved"}
+    return {"message": "Loan noted"}
 
 
 @router.post("/{loan_id}/deny")
 def deny_loan(
     loan_id: int,
     db: Session = Depends(get_db),
-    admin: models.User = Depends(get_admin_user)
+    admin: models.User = Depends(get_admin_user),
 ):
     loan = db.query(models.Loan).filter(models.Loan.id == loan_id).first()
-    if not loan or loan.status != "pending":
-        raise HTTPException(status_code=404, detail="Pending loan not found")
-
+    if not loan or loan.status not in ("pending_verification", "active"):
+        raise HTTPException(status_code=404, detail="Loan not found")
     loan.status = "denied"
     db.add(models.AuditLog(user_id=admin.id,
            action="loan_denied", details=f"Loan {loan_id}"))

@@ -131,8 +131,17 @@ class LoanPhotoOut(BaseModel):
 
 
 class LoanCreate(BaseModel):
-    item_ids: List[int]
+    lockers: List[str]   # which lockers they need, e.g. ["top", "bottom", "pad"]
     days: int
+
+
+class LoanVerifyRequest(BaseModel):
+    verification_code: str
+
+
+class LoanVerifyResponse(BaseModel):
+    locker_codes: Dict[str, str]   # {"top": "1234", "bottom": "5678", ...}
+    due_date: datetime
 
 
 class LoanUpdate(BaseModel):
@@ -146,6 +155,7 @@ class LoanOut(BaseModel):
     item_ids: List[int]
     locker_codes: Optional[Dict]
     lockers: Optional[List[str]]
+    locker_verified: bool = False
     due_date: Optional[datetime]
     status: str
     created_at: datetime
@@ -170,4 +180,8 @@ class StockCheckRequest(BaseModel):
 
 class LockerCodeUpdate(BaseModel):
     locker: str
+    code: str
+
+
+class VerificationCodeUpdate(BaseModel):
     code: str

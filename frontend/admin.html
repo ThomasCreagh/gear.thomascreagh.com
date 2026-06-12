@@ -217,9 +217,19 @@
       <input type="text" id="new-code" placeholder="e.g. 4821" style="width:200px">
       <button type="button" class="btn btn-primary" onclick="updateLockerCode()">Update Code</button>
     </div>
+    <div class="card" style="margin-top:1rem;border:2px solid var(--accent)">
+      <h2>🔐 In-Person Verification Code</h2>
+      <p style="font-size:0.85rem;color:var(--muted);margin-bottom:0.75rem">
+        This is the single code members must enter when starting or returning a loan.
+        Post it physically on the locker board and update it here whenever you change it.
+      </p>
+      <label>Current code</label>
+      <div id="current-verify-code" style="font-size:1.4rem;font-weight:700;letter-spacing:0.15em;margin-bottom:0.75rem;color:var(--primary)">—</div>
+      <label>Set new verification code</label>
+      <input type="text" id="new-verify-code" placeholder="e.g. CLIMB24" style="width:220px;text-transform:uppercase;letter-spacing:0.1em">
+      <button type="button" class="btn btn-primary" onclick="updateVerificationCode()">Update Verification Code</button>
+    </div>
   </div>
-
-  <!-- AUDIT LOG -->
   <div class="section" id="tab-audit">
     <h1>Audit Log</h1>
     <div class="card">
@@ -524,6 +534,10 @@
   // --- LOCKER CODES ---
   async function loadLockerCodes() {
     const data = await apiFetch("/admin/locker-code");
+    try {
+      const vc = await apiFetch("/loans/admin/verification-code");
+      document.getElementById("current-verify-code").textContent = vc.code || "Not set";
+    } catch (_) {}
     document.getElementById("locker-codes-grid").innerHTML = Object.entries(data).map(([locker, info]) => `
       <div class="stat-card">
         <div class="label">${LOCKER_LABELS[locker] || locker}</div>
@@ -540,6 +554,17 @@
     try {
       await apiFetch("/admin/locker-code", { method: "POST", body: JSON.stringify({ locker, code }) });
       msg(`✓ ${LOCKER_LABELS[locker]} code updated.`);
+      loadLockerCodes();
+    } catch (e) { msg(e.message, true); }
+  }
+
+  async function updateVerificationCode() {
+    const code = document.getElementById("new-verify-code").value.trim().toUpperCase();
+    if (!code) return msg("Enter a code.", true);
+    try {
+      await apiFetch("/loans/admin/verification-code", { method: "POST", body: JSON.stringify({ code }) });
+      msg("✓ Verification code updated.");
+      document.getElementById("new-verify-code").value = "";
       loadLockerCodes();
     } catch (e) { msg(e.message, true); }
   }

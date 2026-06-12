@@ -95,12 +95,13 @@ class Loan(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    item_ids = Column(JSON, nullable=False)
-    locker_codes = Column(JSON)   # {"outdoor": "1234", "top": "5678"}
-    lockers = Column(JSON)        # ["outdoor", "top"]
+    item_ids = Column(JSON, nullable=False, default=list)  # filled after locker opened
+    locker_codes = Column(JSON)        # {"outdoor": "1234", "top": "5678"} — revealed after verification
+    lockers = Column(JSON)             # ["outdoor", "top"] — chosen at loan creation
+    locker_verified = Column(Boolean, default=False)  # True once verification code entered
     due_date = Column(DateTime)
-    # pending | active | returned | denied
-    status = Column(String, default="active")
+    # pending_verification | active | returned | denied
+    status = Column(String, default="pending_verification")
     created_at = Column(DateTime, default=datetime.utcnow)
     returned_at = Column(DateTime)
 
@@ -139,6 +140,17 @@ class LockerCode(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     locker = Column(String, nullable=False)
+    code = Column(String, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow)
+    updated_by = Column(Integer, ForeignKey("users.id"))
+
+
+class VerificationCode(Base):
+    """Single global in-person verification code set by admin.
+    Only the most recent row is used."""
+    __tablename__ = "verification_codes"
+
+    id = Column(Integer, primary_key=True, index=True)
     code = Column(String, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow)
     updated_by = Column(Integer, ForeignKey("users.id"))

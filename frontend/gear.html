@@ -6,12 +6,6 @@
   <title>Gear — Browse</title>
   <link rel="stylesheet" href="static/style.css">
   <style>
-    .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:100; align-items:center; justify-content:center; }
-    .modal-overlay.open { display:flex; }
-    .modal { background:white; border-radius:var(--radius); padding:2rem; max-width:480px; width:90%; }
-    .warning-box { background:#fff3cd; border:1px solid #f39c12; border-radius:var(--radius); padding:1rem; margin-bottom:1rem; }
-    .warning-box h3 { color:#856404; margin-bottom:0.5rem; }
-    .warning-box p { color:#856404; font-size:0.9rem; }
     .category-section { margin-bottom:2rem; }
     .category-header {
       display:flex; align-items:center; gap:0.75rem;
@@ -22,62 +16,33 @@
     .category-header h2 { font-size:1rem; color:var(--primary); margin:0; flex:1; }
     .category-header .toggle-icon { color:var(--muted); font-size:0.8rem; transition:transform 0.2s; }
     .category-header.collapsed .toggle-icon { transform:rotate(-90deg); }
-    .category-body { }
     .category-body.hidden { display:none; }
     .search-bar { display:flex; align-items:center; gap:0.75rem; margin-bottom:1.25rem; }
     .search-bar input { margin:0; flex:1; }
     .search-bar .clear-btn { background:none; border:none; cursor:pointer; color:var(--muted); font-size:1.1rem; line-height:1; padding:0 0.25rem; }
     .search-bar .clear-btn:hover { color:var(--text); }
     .no-results { color:var(--muted); font-size:0.9rem; padding:0.5rem 0; }
-
-    .success-banner {
-      background:#e8fde8; border:1px solid #c6f5c6; border-radius:var(--radius);
-      padding:0.8rem 1.2rem; margin-bottom:1rem; display:none;
+    .info-banner {
+      background:#e8f4fd; border:1px solid #bee3f8; border-radius:var(--radius);
+      padding:0.9rem 1.2rem; margin-bottom:1.25rem;
       display:flex; align-items:center; justify-content:space-between; gap:1rem;
     }
-    .success-banner span { color:var(--success); font-weight:600; }
-    .success-banner a { color:var(--success); font-weight:700; white-space:nowrap; }
+    .info-banner span { color:#2b6cb0; font-size:0.9rem; }
+    .info-banner a { color:#2b6cb0; font-weight:700; white-space:nowrap; }
   </style>
 </head>
 <body>
 <nav>
   <span class="logo">⛺ Gear</span>
   <div>
-    <a href="gear.html">Browse</a>
+    <a href="gear.html" style="font-weight:700">Browse</a>
     <a href="myloans.html">My Loans</a>
-    <a href="return.html">Return</a>
     <a href="#" onclick="logout()">Logout</a>
   </div>
 </nav>
 
-<!-- Borrow confirmation modal -->
-<div class="modal-overlay" id="borrow-modal">
-  <div class="modal">
-    <h2 style="margin-bottom:1rem">⚠️ Before You Borrow</h2>
-    <div class="warning-box">
-      <h3>You are responsible for this gear</h3>
-      <p>By proceeding, you accept full responsibility for all borrowed items. Any damage, loss, or failure to return on time will result in your account being locked and you may be required to cover replacement costs.</p>
-    </div>
-    <ul style="font-size:0.85rem;color:var(--muted);margin-bottom:1.5rem;padding-left:1.2rem">
-      <li>You must photograph each locker after collecting gear</li>
-      <li>Return all items by the due date or your account is locked</li>
-      <li>You must photograph each locker when returning</li>
-      <li>Report any damage to Tom immediately</li>
-    </ul>
-    <div style="display:flex;gap:0.75rem">
-      <button type="button" class="btn btn-primary" onclick="confirmBorrow()">I understand — proceed</button>
-      <button type="button" class="btn btn-secondary" onclick="closeBorrowModal()">Cancel</button>
-    </div>
-  </div>
-</div>
-
 <div class="container">
   <h1>Available Gear</h1>
-
-  <div id="borrow-success-banner" style="display:none" class="alert alert-success">
-    <span id="borrow-success-text"></span>
-    <a href="myloans.html">View in My Loans →</a>
-  </div>
 
   <div class="alert alert-error" id="error"></div>
 
@@ -87,76 +52,64 @@
   </div>
 
   <div id="main" style="display:none">
+
+    <div class="info-banner">
+      <span>📍 To borrow gear, head to the lockers and start a loan from <strong>My Loans</strong>.</span>
+      <a href="myloans.html">Go to My Loans →</a>
+    </div>
+
     <div class="search-bar">
-      <input type="text" id="gear-search" placeholder="Search by name, tag, category…" oninput="filterGear()" style="margin-bottom:0">
+      <input type="text" id="gear-search" placeholder="Search by name, tag, category…"
+        oninput="filterGear()" style="margin-bottom:0">
       <button class="clear-btn" id="search-clear" onclick="clearSearch()" title="Clear" style="display:none">✕</button>
     </div>
-    <div id="categories-container"></div>
 
-    <div class="card" style="margin-top:1.5rem">
-      <h2>Request Borrow</h2>
-      <div class="form-group">
-        <label>Days (max <span id="max-days">14</span>)</label>
-        <input type="number" id="days" min="1" max="14" value="3" style="width:120px">
-      </div>
-      <button type="button" class="btn btn-primary" onclick="openBorrowModal()">Request Borrow</button>
-    </div>
+    <div id="categories-container"></div>
   </div>
 </div>
 
 <script src="static/api.js"></script>
 <script>
   requireAuth();
-  let me, items = [];
+  let items = [];
 
   const CATEGORY_LABELS = {
-    harness: "Harness", pad: "Pad", rope: "Rope", cam: "Cam",
-    quickdraw: "Quickdraw", nut: "Nut", carabiner: "Carabiner",
-    helmet: "Helmet", belay_device: "Belay Device", sling: "Sling",
-    rope_protector: "Rope Protector", misc_trad: "Misc Trad", misc: "Misc"
+    harness:"Harness", pad:"Pad", rope:"Rope", cam:"Cam",
+    quickdraw:"Quickdraw", nut:"Nut", carabiner:"Carabiner",
+    helmet:"Helmet", belay_device:"Belay Device", sling:"Sling",
+    rope_protector:"Rope Protector", misc_trad:"Misc Trad", misc:"Misc"
   };
   const CATEGORY_ORDER = ["harness","pad","rope","cam","quickdraw","nut","carabiner","helmet","belay_device","sling","rope_protector","misc_trad","misc"];
-  const LOCKER_LABELS = { outdoor: "Outdoor Locker", top: "Top Locker", bottom: "Bottom Locker", pad: "Pad Stash" };
+  const LOCKER_LABELS  = { outdoor:"Outdoor Locker", top:"Top Locker", bottom:"Bottom Locker", pad:"Pad Stash" };
 
   async function init() {
     try {
-      me = await getMe();
+      const me = await getMe();
       if (!me.is_approved) { document.getElementById("not-approved").style.display = "block"; return; }
       if (me.is_locked) showError(document.getElementById("error"), "⚠️ Your account is locked due to overdue items. Contact Tom.");
       document.getElementById("main").style.display = "block";
-      await loadItems();
+      items = await apiFetch("/items");
+      renderCategories();
     } catch (e) { showError(document.getElementById("error"), e.message); }
-  }
-
-  async function loadItems() {
-    items = await apiFetch("/items");
-    renderCategories();
   }
 
   function renderCategories() {
     const container = document.getElementById("categories-container");
-
-    // Group items by category
     const groups = {};
     for (const item of items) {
       const cat = item.category || "misc";
       if (!groups[cat]) groups[cat] = [];
       groups[cat].push(item);
     }
-
-    // Sort within each group by tag
     for (const cat of Object.keys(groups)) {
       groups[cat].sort((a, b) => (a.tag || "").localeCompare(b.tag || "", undefined, { numeric: true }));
     }
-
-    // Render in order, known categories first then any extras
     const orderedCats = [...CATEGORY_ORDER.filter(c => groups[c]), ...Object.keys(groups).filter(c => !CATEGORY_ORDER.includes(c))];
 
     container.innerHTML = orderedCats.map(cat => {
       const catItems = groups[cat];
       const availableCount = catItems.filter(i => i.available).length;
       const label = CATEGORY_LABELS[cat] || cat;
-
       return `
         <div class="category-section">
           <div class="category-header" onclick="toggleCategory(this)">
@@ -174,10 +127,9 @@
                   </div>
                   <p>${item.description || ''}</p>
                   <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.25rem">
-                    ${item.tag ? `<span class="badge badge-gray">Tag #${item.tag}</span>` : ''}
+                    ${item.tag    ? `<span class="badge badge-gray">Tag #${item.tag}</span>` : ''}
                     ${item.locker ? `<span class="badge badge-gray">${LOCKER_LABELS[item.locker] || item.locker}</span>` : ''}
                   </div>
-                  ${item.available ? `<label style="margin-top:0.5rem"><input type="checkbox" value="${item.id}" class="item-check"> Add to request</label>` : ''}
                 </div>
               `).join("")}
             </div>
@@ -191,75 +143,28 @@
     header.nextElementSibling.classList.toggle("hidden");
   }
 
-  function openBorrowModal() {
-    const checked = [...document.querySelectorAll(".item-check:checked")];
-    if (!checked.length) return showError(document.getElementById("error"), "Select at least one item.");
-    const days = parseInt(document.getElementById("days").value);
-    if (!days || days < 1) return showError(document.getElementById("error"), "Enter valid number of days.");
-    document.getElementById("borrow-modal").classList.add("open");
-  }
-
-  function closeBorrowModal() {
-    document.getElementById("borrow-modal").classList.remove("open");
-  }
-
-  async function confirmBorrow() {
-    closeBorrowModal();
-    const checked = [...document.querySelectorAll(".item-check:checked")].map(el => parseInt(el.value));
-    const days = parseInt(document.getElementById("days").value);
-    const err = document.getElementById("error");
-    err.style.display = "none";
-
-    try {
-      const loan = await apiFetch("/loans", { method: "POST", body: JSON.stringify({ item_ids: checked, days }) });
-
-      const banner = document.getElementById("borrow-success-banner");
-      const text = document.getElementById("borrow-success-text");
-      if (loan.status === "pending") {
-        text.textContent = "✓ Request sent to Tom for approval. You'll receive an email when approved.";
-      } else {
-        const codes = Object.entries(loan.locker_codes || {}).map(([l, c]) => `${LOCKER_LABELS[l]}: ${c}`).join(", ");
-        text.textContent = `✓ Approved! Codes: ${codes}. Due: ${new Date(loan.due_date).toLocaleDateString()}.`;
-      }
-      banner.style.display = "flex";
-      banner.scrollIntoView({ behavior: "smooth", block: "nearest" });
-
-      await loadItems();
-    } catch (e) { showError(err, e.message); }
-  }
-
   function filterGear() {
     const q = document.getElementById("gear-search").value.trim().toLowerCase();
     document.getElementById("search-clear").style.display = q ? "inline" : "none";
 
-    const sections = document.querySelectorAll(".category-section");
     let anyVisible = false;
-
-    sections.forEach(section => {
-      const cards = section.querySelectorAll(".item-card");
+    document.querySelectorAll(".category-section").forEach(section => {
       let sectionHasMatch = false;
-
-      cards.forEach(card => {
-        const text = card.textContent.toLowerCase();
-        const show = !q || text.includes(q);
+      section.querySelectorAll(".item-card").forEach(card => {
+        const show = !q || card.textContent.toLowerCase().includes(q);
         card.style.display = show ? "" : "none";
         if (show) sectionHasMatch = true;
       });
-
       section.style.display = sectionHasMatch ? "" : "none";
       if (sectionHasMatch) {
         anyVisible = true;
-        // Expand collapsed sections when searching
         if (q) {
-          const header = section.querySelector(".category-header");
-          const body = section.querySelector(".category-body");
-          header.classList.remove("collapsed");
-          body.classList.remove("hidden");
+          section.querySelector(".category-header").classList.remove("collapsed");
+          section.querySelector(".category-body").classList.remove("hidden");
         }
       }
     });
 
-    // Show/hide no-results message
     let noResults = document.getElementById("no-results-msg");
     if (!noResults) {
       noResults = document.createElement("p");
