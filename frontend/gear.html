@@ -24,6 +24,12 @@
     .category-header.collapsed .toggle-icon { transform:rotate(-90deg); }
     .category-body { }
     .category-body.hidden { display:none; }
+    .search-bar { display:flex; align-items:center; gap:0.75rem; margin-bottom:1.25rem; }
+    .search-bar input { margin:0; flex:1; }
+    .search-bar .clear-btn { background:none; border:none; cursor:pointer; color:var(--muted); font-size:1.1rem; line-height:1; padding:0 0.25rem; }
+    .search-bar .clear-btn:hover { color:var(--text); }
+    .no-results { color:var(--muted); font-size:0.9rem; padding:0.5rem 0; }
+
     .success-banner {
       background:#e8fde8; border:1px solid #c6f5c6; border-radius:var(--radius);
       padding:0.8rem 1.2rem; margin-bottom:1rem; display:none;
@@ -81,6 +87,10 @@
   </div>
 
   <div id="main" style="display:none">
+    <div class="search-bar">
+      <input type="text" id="gear-search" placeholder="Search by name, tag, category…" oninput="filterGear()" style="margin-bottom:0">
+      <button class="clear-btn" id="search-clear" onclick="clearSearch()" title="Clear" style="display:none">✕</button>
+    </div>
     <div id="categories-container"></div>
 
     <div class="card" style="margin-top:1.5rem">
@@ -216,6 +226,54 @@
 
       await loadItems();
     } catch (e) { showError(err, e.message); }
+  }
+
+  function filterGear() {
+    const q = document.getElementById("gear-search").value.trim().toLowerCase();
+    document.getElementById("search-clear").style.display = q ? "inline" : "none";
+
+    const sections = document.querySelectorAll(".category-section");
+    let anyVisible = false;
+
+    sections.forEach(section => {
+      const cards = section.querySelectorAll(".item-card");
+      let sectionHasMatch = false;
+
+      cards.forEach(card => {
+        const text = card.textContent.toLowerCase();
+        const show = !q || text.includes(q);
+        card.style.display = show ? "" : "none";
+        if (show) sectionHasMatch = true;
+      });
+
+      section.style.display = sectionHasMatch ? "" : "none";
+      if (sectionHasMatch) {
+        anyVisible = true;
+        // Expand collapsed sections when searching
+        if (q) {
+          const header = section.querySelector(".category-header");
+          const body = section.querySelector(".category-body");
+          header.classList.remove("collapsed");
+          body.classList.remove("hidden");
+        }
+      }
+    });
+
+    // Show/hide no-results message
+    let noResults = document.getElementById("no-results-msg");
+    if (!noResults) {
+      noResults = document.createElement("p");
+      noResults.id = "no-results-msg";
+      noResults.className = "no-results";
+      noResults.textContent = "No items match your search.";
+      document.getElementById("categories-container").after(noResults);
+    }
+    noResults.style.display = (q && !anyVisible) ? "block" : "none";
+  }
+
+  function clearSearch() {
+    document.getElementById("gear-search").value = "";
+    filterGear();
   }
 
   init();
