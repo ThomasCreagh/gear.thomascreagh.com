@@ -84,11 +84,12 @@ def create_loan(
     db_loan = models.Loan(
         user_id=current_user.id,
         item_ids=[],
-        locker_codes=None,          # revealed only after verification
+        locker_codes=None,
         lockers=loan.lockers,
         locker_verified=False,
         due_date=due_date,
         status="pending_verification",
+        loan_type=loan.loan_type or "standard",
     )
     db.add(db_loan)
     db.add(models.AuditLog(
@@ -280,14 +281,16 @@ def return_loan(
     if loan.status != "active":
         raise HTTPException(status_code=400, detail="Loan is not active")
 
-    required_lockers = set(loan.lockers or [])
-    uploaded_lockers = {
-        p.locker for p in loan.photos if p.photo_type == "return"}
-    missing = required_lockers - uploaded_lockers
-    if missing:
-        labels = [models.LOCKER_LABELS.get(l, l) for l in missing]
-        raise HTTPException(status_code=400, detail=f"Missing return photos for: {
-                            ', '.join(labels)}")
+    # T-wall loans skip photo requirement
+    if loan.loan_type != "twall":
+        required_lockers = set(loan.lockers or [])
+        uploaded_lockers = {
+            p.locker for p in loan.photos if p.photo_type == "return"}
+        missing = required_lockers - uploaded_lockers
+        if missing:
+            labels = [models.LOCKER_LABELS.get(l, l) for l in missing]
+            raise HTTPException(status_code=400, detail=f"Missing return photos for: {
+                                ', '.join(labels)}")
 
     loan.status = "returned"
     loan.returned_at = datetime.utcnow()
@@ -384,3 +387,34 @@ def deny_loan(
            action="loan_denied", details=f"Loan {loan_id}"))
     db.commit()
     return {"message": "Loan denied"}
+
+
+# ---------------------------------------------------------------------------
+# Auto-close T-wall loans older than 24h (call from a cron job or admin trigger)
+# ---------------------------------------------------------------------------
+@router.post("/admin/twall-autoclose")
+def twall_autoclose(
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(get_admin_user),
+):
+    cutoff = datetime.utcnow() - timedelta(hours=24)
+    loans = db.query(models.Loan).filter(
+        models.Loan.loan_type == "twall",
+        models.Loan.status == "active",
+        models.Loan.created_at <= cutoff,
+    ).all()
+
+    closed = []
+    for loan in loans:
+        loan.status = "returned"
+        loan.returned_at = datetime.utcnow()
+        loan.locker_codes = None
+        db.add(models.AuditLog(
+            user_id=admin.id,
+            action="twall_autoclosed",
+            details=f"Loan {loan.id} auto-closed after 24h",
+        ))
+        closed.append(loan.id)
+
+    db.commit()
+    return {"closed": closed, "count": len(closed)}

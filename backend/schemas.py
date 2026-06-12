@@ -131,8 +131,9 @@ class LoanPhotoOut(BaseModel):
 
 
 class LoanCreate(BaseModel):
-    lockers: List[str]   # which lockers they need, e.g. ["top", "bottom", "pad"]
+    lockers: List[str]
     days: int
+    loan_type: Optional[str] = "standard"  # standard | twall
 
 
 class LoanVerifyRequest(BaseModel):
@@ -158,6 +159,7 @@ class LoanOut(BaseModel):
     locker_verified: bool = False
     due_date: Optional[datetime]
     status: str
+    loan_type: str = "standard"
     created_at: datetime
     returned_at: Optional[datetime]
     photos: List[LoanPhotoOut] = []

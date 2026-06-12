@@ -110,6 +110,23 @@
     <!-- Step 1: pick lockers -->
     <div id="modal-step-lockers">
       <div class="step-label">Step 1 — Which lockers do you need?</div>
+
+      <!-- Trinity Wall shortcut -->
+      <div style="background:#f0f4ff;border:1px solid #c7d2fe;border-radius:var(--radius);padding:0.85rem;margin-bottom:1rem">
+        <div style="font-size:0.8rem;font-weight:700;color:#4338ca;margin-bottom:0.5rem">🏔 Climb at Trinity Wall <span style="font-weight:400;opacity:0.7">(1 day)</span></div>
+        <div style="display:flex;gap:0.6rem;flex-wrap:wrap">
+          <div class="locker-btn" id="trinity-rope" onclick="toggleTrinity('rope')" style="flex:1;min-width:130px">
+            <span class="icon">🧗</span><span class="name">Rope Climb</span>
+            <div style="font-size:0.7rem;color:var(--muted);margin-top:0.2rem">Top + Bottom locker</div>
+          </div>
+          <div class="locker-btn" id="trinity-boulder" onclick="toggleTrinity('boulder')" style="flex:1;min-width:130px">
+            <span class="icon">🪨</span><span class="name">Boulder</span>
+            <div style="font-size:0.7rem;color:var(--muted);margin-top:0.2rem">Pad stash</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="step-label" style="margin-top:0.75rem">Loan out side of Trinity wall</div>
       <div class="locker-grid">
         <div class="locker-btn" data-locker="outdoor" onclick="toggleLocker(this)">
           <span class="icon">🧗</span><span class="name">Outdoor Locker</span>
@@ -267,7 +284,50 @@
       : `<p style="color:var(--muted);font-size:0.9rem;padding:0.5rem 0">No past loans.</p>`;
   }
 
+  function renderTwallLoan(loan) {
+    const isPendingVerify = loan.status === "pending_verification";
+    const twallLabel = (loan.lockers || []).includes("pad") && (loan.lockers || []).includes("top")
+      ? "Rope Climb + Boulder"
+      : (loan.lockers || []).includes("top") ? "Rope Climb" : "Boulder";
+
+    const codesHtml = (!isPendingVerify && loan.locker_codes)
+      ? `<div class="step-block">
+           <div class="step-label">✓ Locker codes</div>
+           <div class="code-grid">
+             ${(loan.lockers || []).map(l => `
+               <div class="code-card">
+                 <div class="locker-name">${LOCKER_ICONS[l] || ''} ${LOCKER_LABELS[l] || l}</div>
+                 <div class="code">${loan.locker_codes[l] || "—"}</div>
+               </div>`).join("")}
+           </div>
+           <div class="step-block">
+             <button class="btn btn-success" onclick="confirmReturn(${loan.id})">✓ Done — return gear</button>
+           </div>
+         </div>`
+      : `<div class="step-block">
+           <div class="step-label">Step 1 — Verify you're at the locker</div>
+           <p style="font-size:0.85rem;color:var(--muted);margin-bottom:0.75rem">
+             Enter the verification code on the locker board.
+           </p>
+           <button class="btn btn-primary" onclick="openVerifyForExisting(${loan.id})">Enter verification code →</button>
+         </div>`;
+
+    return `
+      <div class="loan-card" id="loan-card-${loan.id}">
+        <div class="loan-header">
+          <div>
+            <div class="loan-title">🏔 Trinity Wall — ${twallLabel}</div>
+            <div class="loan-meta">Today · ${(loan.lockers||[]).map(l=>LOCKER_LABELS[l]||l).join(", ")}</div>
+          </div>
+          <span class="badge ${isPendingVerify ? 'badge-yellow' : 'badge-green'}">${isPendingVerify ? 'Awaiting verification' : 'Active'}</span>
+        </div>
+        ${codesHtml}
+      </div>`;
+  }
+
   function renderActiveLoan(loan) {
+    if (loan.loan_type === "twall") return renderTwallLoan(loan);
+
     const isPendingVerify = loan.status === "pending_verification";
     const due    = loan.due_date ? new Date(loan.due_date).toLocaleDateString() : "—";
     const overdue = loan.due_date && !isPendingVerify && new Date(loan.due_date) < new Date();
@@ -423,6 +483,8 @@
     pendingNewLoanId = null;
     // Reset modal state
     document.querySelectorAll(".locker-btn").forEach(b => b.classList.remove("selected"));
+    document.getElementById("trinity-rope").classList.remove("selected");
+    document.getElementById("trinity-boulder").classList.remove("selected");
     document.getElementById("modal-days").value = 3;
     document.getElementById("modal-verify-code").value = "";
     document.getElementById("modal-err-lockers").style.display = "none";
@@ -438,10 +500,51 @@
     if (pendingNewLoanId) { pendingNewLoanId = null; reload(); }
   }
 
-  function toggleLocker(el) { el.classList.toggle("selected"); }
+  function toggleLocker(el) {
+    el.classList.toggle("selected");
+    // deselect trinity shortcuts if manual selection changes top/bottom/pad
+    syncTrinityState();
+  }
+
+  function toggleTrinity(type) {
+    const ropeBtn    = document.getElementById("trinity-rope");
+    const boulderBtn = document.getElementById("trinity-boulder");
+    const topBtn     = document.querySelector('[data-locker="top"]');
+    const bottomBtn  = document.querySelector('[data-locker="bottom"]');
+    const padBtn     = document.querySelector('[data-locker="pad"]');
+    const daysInput  = document.getElementById("modal-days");
+
+    const isActive = type === "rope" ? ropeBtn.classList.contains("selected")
+                                     : boulderBtn.classList.contains("selected");
+
+    if (type === "rope") {
+      ropeBtn.classList.toggle("selected");
+      const on = ropeBtn.classList.contains("selected");
+      topBtn.classList.toggle("selected", on);
+      bottomBtn.classList.toggle("selected", on);
+    } else {
+      boulderBtn.classList.toggle("selected");
+      const on = boulderBtn.classList.contains("selected");
+      padBtn.classList.toggle("selected", on);
+    }
+
+    // Force 1 day if either trinity option active
+    const anyTrinity = ropeBtn.classList.contains("selected") || boulderBtn.classList.contains("selected");
+    if (anyTrinity) daysInput.value = 1;
+  }
+
+  function syncTrinityState() {
+    const topSel    = document.querySelector('[data-locker="top"]').classList.contains("selected");
+    const bottomSel = document.querySelector('[data-locker="bottom"]').classList.contains("selected");
+    const padSel    = document.querySelector('[data-locker="pad"]').classList.contains("selected");
+    if (!topSel || !bottomSel) document.getElementById("trinity-rope").classList.remove("selected");
+    if (!padSel)               document.getElementById("trinity-boulder").classList.remove("selected");
+  }
 
   async function modalNextToVerify() {
-    const selected = [...document.querySelectorAll(".locker-btn.selected")].map(b => b.dataset.locker);
+    const selected = [...document.querySelectorAll(".locker-btn[data-locker].selected")]
+      .map(b => b.dataset.locker)
+      .filter(Boolean);
     const days     = parseInt(document.getElementById("modal-days").value);
     const errEl    = document.getElementById("modal-err-lockers");
     errEl.style.display = "none";
@@ -450,7 +553,12 @@
     if (!days || days < 1 || days > 14) return showError(errEl, "Enter a valid number of days (1–14).");
 
     try {
-      const loan = await apiFetch("/loans", { method:"POST", body: JSON.stringify({ lockers: selected, days }) });
+      const isTwall = document.getElementById("trinity-rope").classList.contains("selected")
+                   || document.getElementById("trinity-boulder").classList.contains("selected");
+      const loan = await apiFetch("/loans", {
+        method:"POST",
+        body: JSON.stringify({ lockers: selected, days, loan_type: isTwall ? "twall" : "standard" })
+      });
       pendingNewLoanId = loan.id;
       document.getElementById("modal-step-lockers").style.display = "none";
       document.getElementById("modal-step-verify").style.display  = "block";

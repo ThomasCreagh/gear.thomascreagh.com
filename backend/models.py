@@ -102,6 +102,8 @@ class Loan(Base):
     due_date = Column(DateTime)
     # pending_verification | active | returned | denied
     status = Column(String, default="pending_verification")
+    # standard | twall
+    loan_type = Column(String, default="standard")
     created_at = Column(DateTime, default=datetime.utcnow)
     returned_at = Column(DateTime)
 
