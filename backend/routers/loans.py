@@ -10,7 +10,7 @@ from database import get_db
 import models
 import schemas
 from auth import get_approved_user, get_admin_user
-from mailer import send_loan_approved, send_loan_pending_admin
+from mailer import send_loan_approved, send_loan_pending_admin, send_overdue_notice
 from config import read_secret
 
 router = APIRouter(prefix="/loans", tags=["loans"])
@@ -95,7 +95,7 @@ def create_loan(
     db.add(models.AuditLog(
         user_id=current_user.id,
         action="loan_created",
-        details=f"lockers={loan.lockers}, days={loan.days}",
+        details=f"type={'trinity_wall' if loan.loan_type == 'twall' else 'outside'}, lockers={loan.lockers}, days={loan.days}",
     ))
     db.commit()
     db.refresh(db_loan)
@@ -418,3 +418,53 @@ def twall_autoclose(
 
     db.commit()
     return {"closed": closed, "count": len(closed)}
+
+
+# ---------------------------------------------------------------------------
+# Send overdue emails + lock accounts (call from cron or admin panel daily)
+# ---------------------------------------------------------------------------
+@router.post("/admin/send-overdue-emails")
+def send_overdue_emails(
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(get_admin_user),
+):
+    now = datetime.utcnow()
+    overdue_loans = db.query(models.Loan).filter(
+        models.Loan.status == "active",
+        models.Loan.due_date < now,
+    ).all()
+
+    notified = []
+    for loan in overdue_loans:
+        user = db.query(models.User).filter(models.User.id == loan.user_id).first()
+        if not user:
+            continue
+
+        # Lock the account
+        if not user.is_locked:
+            user.is_locked = True
+
+        # Build item name list
+        item_names = []
+        for item_id in (loan.item_ids or []):
+            item = db.query(models.Item).filter(models.Item.id == item_id).first()
+            if item:
+                label = f"#{item.tag} {item.name}" if item.tag else item.name
+                if item.description:
+                    label += f" — {item.description}"
+                item_names.append(label)
+
+        due_str = loan.due_date.strftime("%d %b %Y") if loan.due_date else "unknown"
+        item_names_with_due = [f"Due {due_str}"] + (item_names or ["(no items logged)"])
+
+        send_overdue_notice(user.email, item_names_with_due)
+
+        db.add(models.AuditLog(
+            user_id=admin.id,
+            action="overdue_notice_sent",
+            details=f"Loan {loan.id}, user {user.email}",
+        ))
+        notified.append({"loan_id": loan.id, "user": user.email})
+
+    db.commit()
+    return {"notified": notified, "count": len(notified)}

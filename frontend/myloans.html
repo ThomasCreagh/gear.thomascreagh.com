@@ -22,6 +22,35 @@
     .wizard-step.active      { color:var(--text); font-weight:600; }
     .wizard-sep { color:var(--border); font-size:0.8rem; }
 
+    /* ── Location choice (Step 0) ── */
+    .location-choice { display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-bottom:1rem; }
+    .location-btn {
+      border:2px solid var(--border); border-radius:var(--radius);
+      padding:1.25rem 1rem; text-align:center; cursor:pointer;
+      background:white; transition:border-color 0.15s, background 0.15s;
+      user-select:none;
+    }
+    .location-btn .icon { font-size:2.2rem; display:block; margin-bottom:0.5rem; }
+    .location-btn .name { font-size:0.95rem; font-weight:700; color:var(--text); }
+    .location-btn .sub  { font-size:0.75rem; color:var(--muted); margin-top:0.25rem; }
+    .location-btn:hover { border-color:var(--accent); background:#fff8fa; }
+    .location-btn.selected-inside  { border-color:#4338ca; background:#eef2ff; }
+    .location-btn.selected-outside { border-color:var(--accent); background:#fff0f3; }
+
+    /* ── Item tag entry ── */
+    .tag-entry-block {
+      background:#fffbeb; border:2px solid #f59e0b;
+      border-radius:var(--radius); padding:1rem; margin-bottom:0;
+    }
+    .tag-entry-block .tag-label {
+      font-size:0.8rem; font-weight:700; text-transform:uppercase;
+      letter-spacing:0.05em; color:#92400e; margin-bottom:0.5rem;
+    }
+    .tag-entry-block input {
+      font-size:1rem; border:2px solid #f59e0b; background:white;
+    }
+    .tag-entry-block input:focus { border-color:#d97706; outline:none; box-shadow:0 0 0 3px #fde68a; }
+
     /* ── Locker selector ── */
     .locker-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(140px,1fr)); gap:0.75rem; margin-bottom:1rem; }
     .locker-btn {
@@ -107,26 +136,71 @@
       Select the lockers you need to open, then enter the verification code on the locker to receive the combination codes.
     </p>
 
-    <!-- Step 1: pick lockers -->
-    <div id="modal-step-lockers">
-      <div class="step-label">Step 1 — Which lockers do you need?</div>
+    <!-- Step -1: Safety disclaimer -->
+    <div id="modal-step-disclaimer">
+      <div style="background:#fff8e1;border:2px solid #f59e0b;border-radius:var(--radius);padding:1.25rem;margin-bottom:1.25rem">
+        <div style="font-size:1.1rem;font-weight:700;margin-bottom:0.75rem">⚠️ Safety Responsibility</div>
+        <p style="font-size:0.9rem;line-height:1.6;margin-bottom:0.75rem">
+          By borrowing gear you confirm that:
+        </p>
+        <ul style="font-size:0.9rem;line-height:1.8;padding-left:1.25rem;margin-bottom:0.75rem">
+          <li>You will <strong>inspect all gear before use</strong> and satisfy yourself it is safe.</li>
+          <li>You accept full responsibility for assessing the condition and suitability of any equipment you borrow.</li>
+          <li>Any gear that breaks, is lost, or is damaged while in your possession <strong>is your responsibility</strong>.</li>
+          <li>You will report any damage or safety concerns to Tom immediately.</li>
+        </ul>
+        <p style="font-size:0.85rem;color:var(--muted)">
+          If you are unsure whether any piece of gear is safe to use, do not use it — return it and speak to Tom.
+        </p>
+      </div>
+      <div style="display:flex;gap:0.75rem">
+        <button class="btn btn-primary" onclick="acceptDisclaimer()">I understand — continue →</button>
+        <button class="btn btn-secondary" onclick="closeStartModal()">Cancel</button>
+      </div>
+    </div>
 
-      <!-- Trinity Wall shortcut -->
-      <div style="background:#f0f4ff;border:1px solid #c7d2fe;border-radius:var(--radius);padding:0.85rem;margin-bottom:1rem">
-        <div style="font-size:0.8rem;font-weight:700;color:#4338ca;margin-bottom:0.5rem">🏔 Climb at Trinity Wall <span style="font-weight:400;opacity:0.7">(1 day)</span></div>
-        <div style="display:flex;gap:0.6rem;flex-wrap:wrap">
-          <div class="locker-btn" id="trinity-rope" onclick="toggleTrinity('rope')" style="flex:1;min-width:130px">
-            <span class="icon">🧗</span><span class="name">Rope Climb</span>
-            <div style="font-size:0.7rem;color:var(--muted);margin-top:0.2rem">Top + Bottom locker</div>
-          </div>
-          <div class="locker-btn" id="trinity-boulder" onclick="toggleTrinity('boulder')" style="flex:1;min-width:130px">
-            <span class="icon">🪨</span><span class="name">Boulder</span>
-            <div style="font-size:0.7rem;color:var(--muted);margin-top:0.2rem">Pad stash</div>
-          </div>
+    <!-- Step 0: inside or outside Trinity Wall -->
+    <div id="modal-step-location" style="display:none">
+      <div class="step-label">Where are you climbing?</div>
+      <div class="location-choice">
+        <div class="location-btn" id="loc-inside" onclick="chooseLocation('inside')">
+          <span class="icon">🏔</span>
+          <span class="name">Trinity Wall</span>
+          <div class="sub">Bouldering or rope climbing at the wall today</div>
+        </div>
+        <div class="location-btn" id="loc-outside" onclick="chooseLocation('outside')">
+          <span class="icon">🌄</span>
+          <span class="name">Outside</span>
+          <div class="sub">Taking gear away — crag, outdoor climbing, etc.</div>
         </div>
       </div>
+      <button class="btn btn-secondary" onclick="closeStartModal()">Cancel</button>
+    </div>
 
-      <div class="step-label" style="margin-top:0.75rem">Loan out side of Trinity wall</div>
+    <!-- Step 1a: Trinity Wall -->
+    <div id="modal-step-twall" style="display:none">
+      <div class="step-label">Step 1 — What are you doing at the wall?</div>
+      <div style="display:flex;gap:0.6rem;flex-wrap:wrap;margin-bottom:1rem">
+        <div class="locker-btn" id="trinity-rope" onclick="toggleTrinity('rope')" style="flex:1;min-width:130px">
+          <span class="icon">🧗</span><span class="name">Rope Climb</span>
+          <div style="font-size:0.7rem;color:var(--muted);margin-top:0.2rem">Top + Bottom locker</div>
+        </div>
+        <div class="locker-btn" id="trinity-boulder" onclick="toggleTrinity('boulder')" style="flex:1;min-width:130px">
+          <span class="icon">🪨</span><span class="name">Boulder</span>
+          <div style="font-size:0.7rem;color:var(--muted);margin-top:0.2rem">Pad stash</div>
+        </div>
+      </div>
+      <p style="font-size:0.8rem;color:var(--muted);margin-bottom:1rem">T-wall loans are 1 day and auto-close after 24 hours.</p>
+      <div style="display:flex;gap:0.75rem">
+        <button class="btn btn-primary" onclick="modalNextToVerify()">Next →</button>
+        <button class="btn btn-secondary" onclick="backToLocation()">← Back</button>
+      </div>
+      <div class="alert alert-error" id="modal-err-lockers" style="margin-top:0.75rem"></div>
+    </div>
+
+    <!-- Step 1b: Outside lockers -->
+    <div id="modal-step-lockers" style="display:none">
+      <div class="step-label">Step 1 — Which lockers do you need?</div>
       <div class="locker-grid">
         <div class="locker-btn" data-locker="outdoor" onclick="toggleLocker(this)">
           <span class="icon">🧗</span><span class="name">Outdoor Locker</span>
@@ -141,18 +215,16 @@
           <span class="icon">🛏️</span><span class="name">Pad Stash</span>
         </div>
       </div>
-
       <div class="form-group">
         <label>How many days?</label>
         <input type="number" id="modal-days" min="1" max="14" value="3" style="width:120px">
         <span style="font-size:0.8rem;color:var(--muted)">(max 14)</span>
       </div>
-
       <div style="display:flex;gap:0.75rem;margin-top:0.5rem">
         <button class="btn btn-primary" onclick="modalNextToVerify()">Next →</button>
-        <button class="btn btn-secondary" onclick="closeStartModal()">Cancel</button>
+        <button class="btn btn-secondary" onclick="backToLocation()">← Back</button>
       </div>
-      <div class="alert alert-error" id="modal-err-lockers" style="margin-top:0.75rem"></div>
+      <div class="alert alert-error" id="modal-err-lockers-outside" style="margin-top:0.75rem"></div>
     </div>
 
     <!-- Step 2: verify -->
@@ -364,24 +436,6 @@
       : "";
 
     // Borrow photos
-    const borrowPhotosHtml = !isPendingVerify
-      ? `<div class="step-block">
-           <div class="step-label">Step 2 — Collect gear &amp; photograph each locker</div>
-           ${(loan.lockers || []).map(locker => {
-             const done = (loan.photos || []).some(p => p.locker === locker && p.photo_type === "borrow");
-             return `<div class="photo-card ${done ? 'done' : ''}">
-               <h4>${done ? '✓' : '📷'} ${LOCKER_LABELS[locker] || locker} — Borrow photo</h4>
-               ${done
-                 ? `<span class="badge badge-green">Uploaded</span>`
-                 : `<label class="btn btn-sm btn-secondary" style="cursor:pointer">Upload
-                      <input type="file" accept="image/*" style="display:none" onchange="uploadPhoto(${loan.id},'${locker}','borrow',this)">
-                    </label>`}
-             </div>`;
-           }).join("")}
-         </div>`
-      : "";
-
-    // Item logging
     const es = editState[loan.id] || { item_ids: [...(loan.item_ids || [])] };
     const chipHtml = es.item_ids.map(id => `
       <span class="chip">
@@ -391,22 +445,22 @@
 
     const itemLoggingHtml = !isPendingVerify
       ? `<div class="step-block">
-           <div class="step-label">Step 3 — Log items taken</div>
+           <div class="step-label">Step 2 — Log items taken</div>
            <div class="chip-list" id="chips-${loan.id}">${chipHtml || '<span style="color:var(--muted);font-size:0.85rem">No items logged yet</span>'}</div>
-           <input type="text" placeholder="Search by tag, name, or category…" id="search-${loan.id}"
-             oninput="searchItems(${loan.id})" style="margin-bottom:0.25rem">
-           <div class="search-results" id="results-${loan.id}" style="display:none"></div>
+           <div class="tag-entry-block">
+             <div class="tag-label">📎 Enter item tag number or name</div>
+             <input type="text" placeholder="e.g. 042, BD Cam, harness…" id="search-${loan.id}"
+               oninput="searchItems(${loan.id})" autocomplete="off">
+             <div style="font-size:0.75rem;color:#92400e;margin-top:0.35rem">Tag numbers are printed on each piece of gear</div>
+           </div>
+           <div class="search-results" id="results-${loan.id}" style="display:none;margin-top:0.25rem"></div>
          </div>`
       : "";
 
     // Return section
-    const allBorrowDone = !isPendingVerify && (loan.lockers || []).every(l =>
-      (loan.photos || []).some(p => p.locker === l && p.photo_type === "borrow")
-    );
-
     const returnPhotosHtml = !isPendingVerify
       ? `<div class="step-block">
-           <div class="step-label">Step 4 — Return gear</div>
+           <div class="step-label">Step 3 — Return gear</div>
            <p style="font-size:0.85rem;color:var(--muted);margin-bottom:0.75rem">
              When you're back at the locker, get the codes to open it and return your gear.
            </p>
@@ -450,7 +504,6 @@
         </div>
         ${codesHtml}
         ${pendingBanner}
-        ${borrowPhotosHtml}
         ${itemLoggingHtml}
         ${returnPhotosHtml}
       </div>`;
@@ -479,9 +532,11 @@
   }
 
   // ── Start Loan Modal ───────────────────────────────────────────────────────
+  let currentLoanMode = null; // 'inside' | 'outside'
+
   function openStartModal() {
     pendingNewLoanId = null;
-    // Reset modal state
+    currentLoanMode = null;
     document.querySelectorAll(".locker-btn").forEach(b => b.classList.remove("selected"));
     document.getElementById("trinity-rope").classList.remove("selected");
     document.getElementById("trinity-boulder").classList.remove("selected");
@@ -489,10 +544,38 @@
     document.getElementById("modal-verify-code").value = "";
     document.getElementById("modal-err-lockers").style.display = "none";
     document.getElementById("modal-err-verify").style.display  = "none";
-    document.getElementById("modal-step-lockers").style.display = "block";
-    document.getElementById("modal-step-verify").style.display  = "none";
-    document.getElementById("modal-step-codes").style.display   = "none";
+    document.getElementById("modal-step-disclaimer").style.display = "block";
+    document.getElementById("modal-step-location").style.display  = "none";
+    document.getElementById("modal-step-twall").style.display     = "none";
+    document.getElementById("modal-step-lockers").style.display   = "none";
+    document.getElementById("modal-step-verify").style.display    = "none";
+    document.getElementById("modal-step-codes").style.display     = "none";
+    document.getElementById("loc-inside").classList.remove("selected-inside");
+    document.getElementById("loc-outside").classList.remove("selected-outside");
     document.getElementById("start-modal").classList.add("open");
+  }
+
+  function acceptDisclaimer() {
+    document.getElementById("modal-step-disclaimer").style.display = "none";
+    document.getElementById("modal-step-location").style.display   = "block";
+  }
+
+  function chooseLocation(mode) {
+    currentLoanMode = mode;
+    document.getElementById("loc-inside").classList.toggle("selected-inside",  mode === "inside");
+    document.getElementById("loc-outside").classList.toggle("selected-outside", mode === "outside");
+    document.getElementById("modal-step-location").style.display = "none";
+    if (mode === "inside") {
+      document.getElementById("modal-step-twall").style.display   = "block";
+    } else {
+      document.getElementById("modal-step-lockers").style.display = "block";
+    }
+  }
+
+  function backToLocation() {
+    document.getElementById("modal-step-twall").style.display   = "none";
+    document.getElementById("modal-step-lockers").style.display = "none";
+    document.getElementById("modal-step-location").style.display = "block";
   }
 
   function closeStartModal() {
@@ -502,8 +585,6 @@
 
   function toggleLocker(el) {
     el.classList.toggle("selected");
-    // deselect trinity shortcuts if manual selection changes top/bottom/pad
-    syncTrinityState();
   }
 
   function toggleTrinity(type) {
@@ -512,54 +593,45 @@
     const topBtn     = document.querySelector('[data-locker="top"]');
     const bottomBtn  = document.querySelector('[data-locker="bottom"]');
     const padBtn     = document.querySelector('[data-locker="pad"]');
-    const daysInput  = document.getElementById("modal-days");
-
-    const isActive = type === "rope" ? ropeBtn.classList.contains("selected")
-                                     : boulderBtn.classList.contains("selected");
 
     if (type === "rope") {
       ropeBtn.classList.toggle("selected");
-      const on = ropeBtn.classList.contains("selected");
-      topBtn.classList.toggle("selected", on);
-      bottomBtn.classList.toggle("selected", on);
     } else {
       boulderBtn.classList.toggle("selected");
-      const on = boulderBtn.classList.contains("selected");
-      padBtn.classList.toggle("selected", on);
     }
-
-    // Force 1 day if either trinity option active
-    const anyTrinity = ropeBtn.classList.contains("selected") || boulderBtn.classList.contains("selected");
-    if (anyTrinity) daysInput.value = 1;
-  }
-
-  function syncTrinityState() {
-    const topSel    = document.querySelector('[data-locker="top"]').classList.contains("selected");
-    const bottomSel = document.querySelector('[data-locker="bottom"]').classList.contains("selected");
-    const padSel    = document.querySelector('[data-locker="pad"]').classList.contains("selected");
-    if (!topSel || !bottomSel) document.getElementById("trinity-rope").classList.remove("selected");
-    if (!padSel)               document.getElementById("trinity-boulder").classList.remove("selected");
   }
 
   async function modalNextToVerify() {
-    const selected = [...document.querySelectorAll(".locker-btn[data-locker].selected")]
-      .map(b => b.dataset.locker)
-      .filter(Boolean);
-    const days     = parseInt(document.getElementById("modal-days").value);
-    const errEl    = document.getElementById("modal-err-lockers");
-    errEl.style.display = "none";
+    const isTwall = currentLoanMode === "inside";
+    let selected, days, errEl;
 
-    if (!selected.length) return showError(errEl, "Select at least one locker.");
-    if (!days || days < 1 || days > 14) return showError(errEl, "Enter a valid number of days (1–14).");
+    if (isTwall) {
+      errEl = document.getElementById("modal-err-lockers");
+      errEl.style.display = "none";
+      const ropeOn    = document.getElementById("trinity-rope").classList.contains("selected");
+      const boulderOn = document.getElementById("trinity-boulder").classList.contains("selected");
+      selected = [];
+      if (ropeOn)    selected.push("top", "bottom");
+      if (boulderOn) selected.push("pad");
+      if (!selected.length) return showError(errEl, "Select Rope Climb, Boulder, or both.");
+      days = 1;
+    } else {
+      errEl = document.getElementById("modal-err-lockers-outside");
+      errEl.style.display = "none";
+      selected = [...document.querySelectorAll(".locker-btn[data-locker].selected")]
+        .map(b => b.dataset.locker).filter(Boolean);
+      days = parseInt(document.getElementById("modal-days").value);
+      if (!selected.length) return showError(errEl, "Select at least one locker.");
+      if (!days || days < 1 || days > 14) return showError(errEl, "Enter a valid number of days (1–14).");
+    }
 
     try {
-      const isTwall = document.getElementById("trinity-rope").classList.contains("selected")
-                   || document.getElementById("trinity-boulder").classList.contains("selected");
       const loan = await apiFetch("/loans", {
         method:"POST",
         body: JSON.stringify({ lockers: selected, days, loan_type: isTwall ? "twall" : "standard" })
       });
       pendingNewLoanId = loan.id;
+      document.getElementById("modal-step-twall").style.display   = "none";
       document.getElementById("modal-step-lockers").style.display = "none";
       document.getElementById("modal-step-verify").style.display  = "block";
       document.getElementById("modal-verify-code").focus();
@@ -592,11 +664,14 @@
   // Verify for a loan that was already created but not yet verified (e.g. page reload)
   function openVerifyForExisting(loanId) {
     pendingNewLoanId = loanId;
-    document.getElementById("modal-step-lockers").style.display = "none";
-    document.getElementById("modal-step-codes").style.display   = "none";
-    document.getElementById("modal-step-verify").style.display  = "block";
+    document.getElementById("modal-step-disclaimer").style.display = "none";
+    document.getElementById("modal-step-location").style.display  = "none";
+    document.getElementById("modal-step-twall").style.display    = "none";
+    document.getElementById("modal-step-lockers").style.display  = "none";
+    document.getElementById("modal-step-codes").style.display    = "none";
+    document.getElementById("modal-step-verify").style.display   = "block";
     document.getElementById("modal-verify-code").value = "";
-    document.getElementById("modal-err-verify").style.display   = "none";
+    document.getElementById("modal-err-verify").style.display    = "none";
     document.getElementById("start-modal").classList.add("open");
     document.getElementById("modal-verify-code").focus();
   }
