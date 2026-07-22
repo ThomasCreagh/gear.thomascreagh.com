@@ -80,6 +80,7 @@ def create_loan(
             status_code=400, detail="Select at least one locker")
 
     due_date = datetime.utcnow() + timedelta(days=loan.days)
+    initial_status = "pending_verification" if current_user.auto_approve else "pending_review"
 
     db_loan = models.Loan(
         user_id=current_user.id,
@@ -88,14 +89,14 @@ def create_loan(
         lockers=loan.lockers,
         locker_verified=False,
         due_date=due_date,
-        status="pending_verification",
+        status=initial_status,
         loan_type=loan.loan_type or "standard",
     )
     db.add(db_loan)
     db.add(models.AuditLog(
         user_id=current_user.id,
         action="loan_created",
-        details=f"type={'trinity_wall' if loan.loan_type == 'twall' else 'outside'}, lockers={loan.lockers}, days={loan.days}",
+        details=f"type={'trinity_wall' if loan.loan_type == 'twall' else 'outside'}, lockers={loan.lockers}, days={loan.days}, status={initial_status}",
     ))
     db.commit()
     db.refresh(db_loan)
@@ -119,6 +120,9 @@ def verify_loan(
     ).first()
     if not loan:
         raise HTTPException(status_code=404, detail="Loan not found")
+    if loan.status == "pending_review":
+        raise HTTPException(
+            status_code=403, detail="Awaiting Tom's approval before you can verify.")
     if loan.status not in ("pending_verification", "active"):
         raise HTTPException(
             status_code=400, detail="This loan cannot be verified at this stage")
@@ -365,12 +369,13 @@ def approve_loan(
     admin: models.User = Depends(get_admin_user),
 ):
     loan = db.query(models.Loan).filter(models.Loan.id == loan_id).first()
-    if not loan:
-        raise HTTPException(status_code=404, detail="Loan not found")
+    if not loan or loan.status != "pending_review":
+        raise HTTPException(status_code=404, detail="No pending review for this loan")
+    loan.status = "pending_verification"
     db.add(models.AuditLog(user_id=admin.id,
            action="loan_approved", details=f"Loan {loan_id}"))
     db.commit()
-    return {"message": "Loan noted"}
+    return {"message": "Loan approved"}
 
 
 @router.post("/{loan_id}/deny")
@@ -380,7 +385,7 @@ def deny_loan(
     admin: models.User = Depends(get_admin_user),
 ):
     loan = db.query(models.Loan).filter(models.Loan.id == loan_id).first()
-    if not loan or loan.status not in ("pending_verification", "active"):
+    if not loan or loan.status not in ("pending_review", "pending_verification", "active"):
         raise HTTPException(status_code=404, detail="Loan not found")
     loan.status = "denied"
     db.add(models.AuditLog(user_id=admin.id,
@@ -390,13 +395,50 @@ def deny_loan(
 
 
 # ---------------------------------------------------------------------------
-# Auto-close T-wall loans older than 24h (call from a cron job or admin trigger)
+# Admin: manually toggle a loan's returned state
 # ---------------------------------------------------------------------------
-@router.post("/admin/twall-autoclose")
-def twall_autoclose(
+@router.post("/{loan_id}/admin-toggle-return")
+def admin_toggle_return(
+    loan_id: int,
     db: Session = Depends(get_db),
     admin: models.User = Depends(get_admin_user),
 ):
+    loan = db.query(models.Loan).filter(models.Loan.id == loan_id).first()
+    if not loan:
+        raise HTTPException(status_code=404, detail="Loan not found")
+
+    if loan.status == "returned":
+        # Mark as not returned — reopen as active, items go back to unavailable
+        loan.status = "active"
+        loan.returned_at = None
+        for item_id in (loan.item_ids or []):
+            item = db.query(models.Item).filter(models.Item.id == item_id).first()
+            if item:
+                item.available = False
+        action = "admin_marked_not_returned"
+    elif loan.status == "active":
+        loan.status = "returned"
+        loan.returned_at = datetime.utcnow()
+        loan.locker_codes = None
+        for item_id in (loan.item_ids or []):
+            item = db.query(models.Item).filter(models.Item.id == item_id).first()
+            if item:
+                item.available = True
+        action = "admin_marked_returned"
+    else:
+        raise HTTPException(status_code=400, detail=f"Cannot toggle return from status '{loan.status}'")
+
+    db.add(models.AuditLog(user_id=admin.id, action=action, details=f"Loan {loan_id}"))
+    db.commit()
+    return {"message": "Loan status updated", "status": loan.status}
+
+
+# ---------------------------------------------------------------------------
+# Auto-close T-wall loans older than 24h.
+# Shared by the admin trigger endpoint below and the in-app scheduler in main.py.
+# triggered_by is an admin user id when called manually, None when called by the scheduler.
+# ---------------------------------------------------------------------------
+def run_twall_autoclose(db: Session, triggered_by: int | None = None) -> list[int]:
     cutoff = datetime.utcnow() - timedelta(hours=24)
     loans = db.query(models.Loan).filter(
         models.Loan.loan_type == "twall",
@@ -409,14 +451,27 @@ def twall_autoclose(
         loan.status = "returned"
         loan.returned_at = datetime.utcnow()
         loan.locker_codes = None
+        for item_id in (loan.item_ids or []):
+            item = db.query(models.Item).filter(models.Item.id == item_id).first()
+            if item:
+                item.available = True
         db.add(models.AuditLog(
-            user_id=admin.id,
+            user_id=triggered_by,
             action="twall_autoclosed",
             details=f"Loan {loan.id} auto-closed after 24h",
         ))
         closed.append(loan.id)
 
     db.commit()
+    return closed
+
+
+@router.post("/admin/twall-autoclose")
+def twall_autoclose(
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(get_admin_user),
+):
+    closed = run_twall_autoclose(db, triggered_by=admin.id)
     return {"closed": closed, "count": len(closed)}
 
 

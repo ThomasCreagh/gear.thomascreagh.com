@@ -80,7 +80,7 @@ def reset_password(user_id: int, db: Session = Depends(get_db), admin: models.Us
 def list_loans(active_only: bool = False, db: Session = Depends(get_db), admin: models.User = Depends(get_admin_user)):
     q = db.query(models.Loan)
     if active_only:
-        q = q.filter(models.Loan.status.in_(["pending", "active"]))
+        q = q.filter(models.Loan.status.in_(["pending_review", "pending_verification", "active"]))
     loans = q.order_by(models.Loan.created_at.desc()).all()
     result = []
     for loan in loans:
@@ -96,6 +96,7 @@ def list_loans(active_only: bool = False, db: Session = Depends(get_db), admin: 
             "locker_codes": loan.locker_codes,
             "due_date": loan.due_date,
             "status": loan.status,
+            "loan_type": loan.loan_type,
             "created_at": loan.created_at,
             "returned_at": loan.returned_at,
             "photos": [

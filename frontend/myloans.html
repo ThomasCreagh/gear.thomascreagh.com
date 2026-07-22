@@ -258,6 +258,20 @@
       </p>
       <button class="btn btn-primary" onclick="closeStartModal()">Done — view my loan</button>
     </div>
+
+    <!-- Step X: awaiting manual review -->
+    <div id="modal-step-review" style="display:none">
+      <div class="step-label">Step 1 — Contact Tom</div>
+      <p style="font-size:0.9rem;line-height:1.6;margin-bottom:1rem">
+        Message Tom on WhatsApp with your reason for renting gear, what you're planning to use it for, and when.
+      </p>
+      <div class="step-label">Step 2 — Awaiting approval</div>
+      <p style="font-size:0.9rem;line-height:1.6;margin-bottom:0.75rem">
+        Your request has been sent to Tom for approval. You don't need to go to the locker yet —
+        you'll see an option to enter the verification code here once it's approved.
+      </p>
+      <button class="btn btn-primary" onclick="closeStartModal()">Done — I'll wait</button>
+    </div>
   </div>
 </div>
 
@@ -340,7 +354,7 @@
 
   // ── Render ────────────────────────────────────────────────────────────────
   function render() {
-    const active = allLoans.filter(l => ["pending_verification","active"].includes(l.status));
+    const active = allLoans.filter(l => ["pending_review","pending_verification","active"].includes(l.status));
     const past   = allLoans.filter(l => ["returned","denied"].includes(l.status));
 
     const activeEl = document.getElementById("active-section");
@@ -357,12 +371,20 @@
   }
 
   function renderTwallLoan(loan) {
+    const isPendingReview = loan.status === "pending_review";
     const isPendingVerify = loan.status === "pending_verification";
     const twallLabel = (loan.lockers || []).includes("pad") && (loan.lockers || []).includes("top")
       ? "Rope Climb + Boulder"
       : (loan.lockers || []).includes("top") ? "Rope Climb" : "Boulder";
 
-    const codesHtml = (!isPendingVerify && loan.locker_codes)
+    const codesHtml = isPendingReview
+      ? `<div class="step-block">
+           <div class="step-label">Step 1 — Contact Tom</div>
+           <p style="font-size:0.85rem;color:var(--muted);margin-bottom:0.75rem">Message Tom on WhatsApp with your reason for renting gear, what you're planning to use it for, and when.</p>
+           <div class="step-label">Step 2 — Awaiting approval</div>
+           <p style="font-size:0.85rem;color:var(--muted)">Your request has been sent to Tom for approval. You don't need to go to the locker yet — you'll see an option to enter the verification code here once it's approved.</p>
+         </div>`
+      : (!isPendingVerify && loan.locker_codes)
       ? `<div class="step-block">
            <div class="step-label">✓ Locker codes</div>
            <div class="code-grid">
@@ -391,7 +413,7 @@
             <div class="loan-title">🏔 Trinity Wall — ${twallLabel}</div>
             <div class="loan-meta">Today · ${(loan.lockers||[]).map(l=>LOCKER_LABELS[l]||l).join(", ")}</div>
           </div>
-          <span class="badge ${isPendingVerify ? 'badge-yellow' : 'badge-green'}">${isPendingVerify ? 'Awaiting verification' : 'Active'}</span>
+          <span class="badge ${isPendingReview ? 'badge-yellow' : isPendingVerify ? 'badge-yellow' : 'badge-green'}">${isPendingReview ? 'Awaiting approval' : isPendingVerify ? 'Awaiting verification' : 'Active'}</span>
         </div>
         ${codesHtml}
       </div>`;
@@ -400,15 +422,17 @@
   function renderActiveLoan(loan) {
     if (loan.loan_type === "twall") return renderTwallLoan(loan);
 
+    const isPendingReview = loan.status === "pending_review";
     const isPendingVerify = loan.status === "pending_verification";
     const due    = loan.due_date ? new Date(loan.due_date).toLocaleDateString() : "—";
-    const overdue = loan.due_date && !isPendingVerify && new Date(loan.due_date) < new Date();
+    const overdue = loan.due_date && !isPendingVerify && !isPendingReview && new Date(loan.due_date) < new Date();
     const lockerList = (loan.lockers || []).map(l => LOCKER_LABELS[l] || l).join(", ") || "—";
 
     // Status badge
     let badgeClass = "badge-green", badgeText = "Active";
-    if (isPendingVerify)    { badgeClass = "badge-yellow"; badgeText = "Awaiting verification"; }
-    else if (overdue)       { badgeClass = "badge-red";    badgeText = "Overdue"; }
+    if (isPendingReview)      { badgeClass = "badge-yellow"; badgeText = "Awaiting approval"; }
+    else if (isPendingVerify) { badgeClass = "badge-yellow"; badgeText = "Awaiting verification"; }
+    else if (overdue)         { badgeClass = "badge-red";    badgeText = "Overdue"; }
 
     // Locker codes (only shown once verified)
     const codesHtml = (!isPendingVerify && loan.locker_verified && loan.locker_codes)
@@ -424,8 +448,15 @@
          </div>`
       : "";
 
-    // Pending verify banner
-    const pendingBanner = isPendingVerify
+    // Pending review / verify banner
+    const pendingBanner = isPendingReview
+      ? `<div class="step-block">
+           <div class="step-label">Step 1 — Contact Tom</div>
+           <p style="font-size:0.85rem;color:var(--muted);margin-bottom:0.75rem">Message Tom on WhatsApp with your reason for renting gear, what you're planning to use it for, and when.</p>
+           <div class="step-label">Step 2 — Awaiting approval</div>
+           <p style="font-size:0.85rem;color:var(--muted)">Your request has been sent to Tom for approval. You don't need to go to the locker yet — you'll see an option to enter the verification code here once it's approved.</p>
+         </div>`
+      : isPendingVerify
       ? `<div class="step-block">
            <div class="step-label">Step 1 — Verify you're at the locker</div>
            <p style="font-size:0.85rem;color:var(--muted);margin-bottom:0.75rem">
@@ -443,7 +474,7 @@
         <button onclick="removeChip(${loan.id},${id})" title="Remove">×</button>
       </span>`).join("");
 
-    const itemLoggingHtml = !isPendingVerify
+    const itemLoggingHtml = (!isPendingVerify && !isPendingReview)
       ? `<div class="step-block">
            <div class="step-label">Step 2 — Log items taken</div>
            <div class="chip-list" id="chips-${loan.id}">${chipHtml || '<span style="color:var(--muted);font-size:0.85rem">No items logged yet</span>'}</div>
@@ -550,6 +581,7 @@
     document.getElementById("modal-step-lockers").style.display   = "none";
     document.getElementById("modal-step-verify").style.display    = "none";
     document.getElementById("modal-step-codes").style.display     = "none";
+    document.getElementById("modal-step-review").style.display    = "none";
     document.getElementById("loc-inside").classList.remove("selected-inside");
     document.getElementById("loc-outside").classList.remove("selected-outside");
     document.getElementById("start-modal").classList.add("open");
@@ -633,8 +665,14 @@
       pendingNewLoanId = loan.id;
       document.getElementById("modal-step-twall").style.display   = "none";
       document.getElementById("modal-step-lockers").style.display = "none";
-      document.getElementById("modal-step-verify").style.display  = "block";
-      document.getElementById("modal-verify-code").focus();
+
+      if (loan.status === "pending_review") {
+        document.getElementById("modal-step-review").style.display = "block";
+      } else {
+        document.getElementById("modal-step-verify").style.display  = "block";
+        document.getElementById("modal-verify-code").focus();
+      }
+      await reload();
     } catch (e) { showError(errEl, e.message); }
   }
 

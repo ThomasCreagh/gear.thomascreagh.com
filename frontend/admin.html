@@ -251,7 +251,7 @@
     </div>
     <div class="card">
       <table id="loans-table-wrap">
-        <thead><tr><th>User</th><th>Items</th><th>Lockers</th><th>Due</th><th>Status</th><th>Return photos</th><th></th></tr></thead>
+        <thead><tr><th>User</th><th>Type</th><th>Items</th><th>Lockers</th><th>Due</th><th>Status</th><th>Return photos</th><th></th></tr></thead>
         <tbody id="loans-table"></tbody>
       </table>
     </div>
@@ -512,7 +512,7 @@
   async function loadLoans() {
     const activeOnly = document.getElementById("active-only").checked;
     allLoans = await apiFetch(`/admin/loans${activeOnly ? '?active_only=true' : ''}`);
-    const pending = allLoans.filter(l => l.status === "pending");
+    const pending = allLoans.filter(l => l.status === "pending_review");
     const countEl = document.getElementById("pending-count");
     if (pending.length) { countEl.textContent = pending.length; countEl.style.display = "inline"; }
     else countEl.style.display = "none";
@@ -521,11 +521,13 @@
       const due = loan.due_date ? new Date(loan.due_date).toLocaleDateString() : "—";
       const overdue = loan.due_date && loan.status === "active" && new Date(loan.due_date) < new Date();
       const lockerStr = (loan.lockers || []).map(l => LOCKER_LABELS[l] || l).join(", ");
+      const isTwall = loan.loan_type === "twall";
       const returnCount = loan.photos.filter(p => p.photo_type === "return").length;
       const totalLockers = (loan.lockers || []).length;
 
       const statusBadge = {
-        pending: '<span class="badge pending-badge">Pending</span>',
+        pending_review: '<span class="badge pending-badge">Awaiting approval</span>',
+        pending_verification: '<span class="badge badge-yellow">Awaiting verification</span>',
         active: overdue ? '<span class="badge badge-red">Overdue</span>' : '<span class="badge badge-green">Active</span>',
         returned: '<span class="badge badge-gray">Returned</span>',
         denied: '<span class="badge badge-red">Denied</span>',
@@ -534,23 +536,32 @@
       return `
         <tr>
           <td data-label="User" style="font-size:0.85rem">${loan.user_email}</td>
+          <td data-label="Type" style="font-size:0.85rem">${isTwall ? '🏔 Twall' : '🌄 Outdoor'}</td>
           <td data-label="Items" style="font-size:0.85rem">${loan.item_names.join(", ")}</td>
           <td data-label="Lockers" style="font-size:0.8rem">${lockerStr || '—'}</td>
           <td data-label="Due" style="font-size:0.85rem">${due}</td>
           <td data-label="Status">${statusBadge}</td>
-          <td data-label="Return photos" style="font-size:0.8rem">📷 ${returnCount}/${totalLockers}</td>
+          <td data-label="Return photos" style="font-size:0.8rem">${isTwall ? '—' : `📷 ${returnCount}/${totalLockers}`}</td>
           <td>
             <button class="btn btn-sm btn-secondary" onclick="toggleExpand(${loan.id})">▼</button>
-            ${loan.status === 'pending' ? `
+            ${loan.status === 'pending_review' ? `
               <button class="btn btn-sm btn-success" onclick="approveLoan(${loan.id})">Approve</button>
               <button class="btn btn-sm btn-danger" onclick="denyLoan(${loan.id})">Deny</button>
+            ` : ''}
+            ${loan.status === 'active' ? `
+              <button class="btn btn-sm btn-secondary" onclick="adminToggleReturn(${loan.id})">Mark Returned</button>
+            ` : ''}
+            ${loan.status === 'returned' ? `
+              <button class="btn btn-sm btn-secondary" onclick="adminToggleReturn(${loan.id})">Mark Not Returned</button>
             ` : ''}
           </td>
         </tr>
         <tr class="expandable" id="expand-${loan.id}">
-          <td colspan="7">
+          <td colspan="8">
             <div style="display:flex;gap:2rem;flex-wrap:wrap">
-              ${(() => {
+              ${isTwall
+                ? `<span style="color:var(--muted);font-size:0.85rem">Trinity Wall loans don't require return photos.</span>`
+                : (() => {
                 const photos = loan.photos.filter(p => p.photo_type === "return");
                 return `<div>
                   <strong>Return photos:</strong>
@@ -580,6 +591,14 @@
   async function denyLoan(id) {
     if (!confirm("Deny this borrow request?")) return;
     await apiFetch(`/loans/${id}/deny`, { method: "POST" }); msg("Loan denied."); await loadLoans();
+  }
+  async function adminToggleReturn(id) {
+    if (!confirm("Toggle this loan's returned status? This will also update item availability.")) return;
+    try {
+      const res = await apiFetch(`/loans/${id}/admin-toggle-return`, { method: "POST" });
+      msg(res.status === "returned" ? "✓ Marked as returned." : "✓ Marked as not returned.");
+      await loadLoans();
+    } catch (e) { msg(e.message, true); }
   }
   async function checkOverdue() {
     const result = await apiFetch("/admin/check-overdue", { method: "POST" });
@@ -660,6 +679,19 @@
   }
 
   // --- AUDIT LOG ---
+  function friendlyAuditDetails(details) {
+    if (!details) return '';
+    // Replace item_ids=[16, 7] with item_ids=[#tag, #tag] using the tag, falling back to the raw id if no tag/item found
+    return details.replace(/item_ids=\[([^\]]*)\]/g, (match, idsStr) => {
+      const ids = idsStr.split(',').map(s => s.trim()).filter(Boolean).map(Number);
+      const labels = ids.map(id => {
+        const item = allItems.find(i => i.id === id);
+        return item && item.tag ? `#${item.tag}` : `#${id}`;
+      });
+      return `item_ids=[${labels.join(', ')}]`;
+    });
+  }
+
   async function loadAudit() {
     const logs = await apiFetch("/admin/audit-log");
     document.getElementById("audit-table").innerHTML = logs.map(l => `
@@ -667,7 +699,7 @@
         <td data-label="Time" style="white-space:nowrap;font-size:0.8rem">${new Date(l.timestamp).toLocaleString()}</td>
         <td data-label="User" style="font-size:0.8rem">${allUsers.find(u => u.id === l.user_id)?.email || l.user_id}</td>
         <td data-label="Action"><code style="font-size:0.8rem">${l.action}</code></td>
-        <td data-label="Details" style="font-size:0.8rem;color:var(--muted)">${l.details || ''}</td>
+        <td data-label="Details" style="font-size:0.8rem;color:var(--muted)">${friendlyAuditDetails(l.details)}</td>
       </tr>
     `).join("");
   }

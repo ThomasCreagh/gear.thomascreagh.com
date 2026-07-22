@@ -100,7 +100,7 @@ class Loan(Base):
     lockers = Column(JSON)             # ["outdoor", "top"] — chosen at loan creation
     locker_verified = Column(Boolean, default=False)  # True once verification code entered
     due_date = Column(DateTime)
-    # pending_verification | active | returned | denied
+    # pending_review | pending_verification | active | returned | denied
     status = Column(String, default="pending_verification")
     # standard | twall
     loan_type = Column(String, default="standard")

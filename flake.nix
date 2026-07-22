@@ -29,6 +29,7 @@
           python-multipart
           openpyxl
           pandas
+          apscheduler
         ]);
       in
       pkgs.mkShell {
