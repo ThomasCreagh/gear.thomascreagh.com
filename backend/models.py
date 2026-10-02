@@ -90,6 +90,16 @@ class Item(Base):
                         onupdate=datetime.utcnow)
 
 
+class GearGroup(Base):
+    """A named set of individually tagged items, e.g. a trad rack."""
+    __tablename__ = "gear_groups"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False, unique=True)
+    item_ids = Column(JSON, nullable=False, default=list)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class Loan(Base):
     __tablename__ = "loans"
 

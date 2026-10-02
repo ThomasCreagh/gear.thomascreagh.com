@@ -113,6 +113,20 @@ class ItemOut(BaseModel):
     class Config:
         from_attributes = True
 
+
+class GearGroupCreate(BaseModel):
+    name: str
+    item_ids: List[int]
+
+
+class GearGroupOut(BaseModel):
+    id: int
+    name: str
+    item_ids: List[int]
+
+    class Config:
+        from_attributes = True
+
 # Photos
 
 

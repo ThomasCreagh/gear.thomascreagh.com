@@ -214,6 +214,52 @@ def update_loan(
     return loan
 
 
+@router.post("/{loan_id}/gear-groups/{group_id}", response_model=schemas.LoanOut)
+def add_gear_group_to_loan(
+    loan_id: int,
+    group_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_approved_user),
+):
+    loan = db.query(models.Loan).filter(
+        models.Loan.id == loan_id,
+        models.Loan.user_id == current_user.id,
+    ).first()
+    if not loan:
+        raise HTTPException(status_code=404, detail="Loan not found")
+    if loan.status != "active":
+        raise HTTPException(status_code=400, detail="Can only add a gear group to an active loan")
+
+    group = db.query(models.GearGroup).filter(models.GearGroup.id == group_id).first()
+    if not group or not group.item_ids:
+        raise HTTPException(status_code=404, detail="Gear group not found or has no items")
+
+    items = db.query(models.Item).filter(models.Item.id.in_(group.item_ids)).all()
+    items_by_id = {item.id: item for item in items}
+    missing_ids = set(group.item_ids) - set(items_by_id)
+    if missing_ids:
+        raise HTTPException(status_code=400, detail=f"{group.name} contains deleted gear")
+    unavailable = [item for item in items if not item.available or item.status != "active"]
+    if unavailable:
+        raise HTTPException(status_code=400, detail=f"{group.name} is not fully available")
+    wrong_locker = [item for item in items if item.locker and item.locker not in (loan.lockers or [])]
+    if wrong_locker:
+        raise HTTPException(status_code=400, detail=f"Open the required locker(s) before adding {group.name}")
+
+    new_item_ids = list(dict.fromkeys((loan.item_ids or []) + group.item_ids))
+    for item in items:
+        item.available = False
+    loan.item_ids = new_item_ids
+    db.add(models.AuditLog(
+        user_id=current_user.id,
+        action="gear_group_added_to_loan",
+        details=f"Loan {loan_id}: {group.name} ({group.item_ids})",
+    ))
+    db.commit()
+    db.refresh(loan)
+    return loan
+
+
 # ---------------------------------------------------------------------------
 # Upload photo
 # ---------------------------------------------------------------------------
@@ -476,7 +522,7 @@ def twall_autoclose(
 
 
 # ---------------------------------------------------------------------------
-# Send overdue emails + lock accounts (call from cron or admin panel daily)
+# Send overdue return reminders (call from cron or admin panel daily)
 # ---------------------------------------------------------------------------
 @router.post("/admin/send-overdue-emails")
 def send_overdue_emails(
@@ -494,10 +540,6 @@ def send_overdue_emails(
         user = db.query(models.User).filter(models.User.id == loan.user_id).first()
         if not user:
             continue
-
-        # Lock the account
-        if not user.is_locked:
-            user.is_locked = True
 
         # Build item name list
         item_names = []

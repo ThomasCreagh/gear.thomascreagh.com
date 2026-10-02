@@ -156,14 +156,25 @@ def audit_log(limit: int = 100, db: Session = Depends(get_db), admin: models.Use
 def check_overdue(db: Session = Depends(get_db), admin: models.User = Depends(get_admin_user)):
     now = datetime.utcnow()
     overdue = db.query(models.Loan).filter(models.Loan.status == "active", models.Loan.due_date < now).all()
-    locked = []
+    notified = []
+    reminders = {}
     for loan in overdue:
         user = db.query(models.User).get(loan.user_id)
-        if user and not user.is_locked:
-            user.is_locked = True
-            items = [db.query(models.Item).get(i) for i in loan.item_ids]
-            send_overdue_notice(user.email, [i.name for i in items if i])
-            locked.append(user.email)
-            db.add(models.AuditLog(user_id=admin.id, action="auto_locked", details=f"Overdue: {user.email}"))
+        if not user:
+            continue
+        reminder = reminders.setdefault(user.id, {"user": user, "items": [], "loan_ids": []})
+        items = [db.query(models.Item).get(i) for i in (loan.item_ids or [])]
+        reminder["items"].extend(i.name for i in items if i)
+        reminder["loan_ids"].append(loan.id)
+
+    for reminder in reminders.values():
+        user = reminder["user"]
+        send_overdue_notice(user.email, reminder["items"] or ["(no items logged)"])
+        notified.append(user.email)
+        db.add(models.AuditLog(
+            user_id=admin.id,
+            action="overdue_notice_sent",
+            details=f"Loans {reminder['loan_ids']}, user {user.email}",
+        ))
     db.commit()
-    return {"locked_users": locked}
+    return {"notified_users": notified, "count": len(notified)}

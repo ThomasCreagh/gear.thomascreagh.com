@@ -59,7 +59,14 @@ def send_loan_pending_admin(user_email: str, items: list):
 def send_overdue_notice(email: str, items: list):
     items_html = "".join(f"<li>{i}</li>" for i in items)
     send_email(email, "Gear Return Overdue", f"""
-        <p>You have overdue gear. Your account is now locked.</p>
+        <p>Your gear loan is overdue. Please return it as soon as you can.</p>
         <ul>{items_html}</ul>
-        <p>Contact Tom immediately to resolve this.</p>
+        <p><b>How to return your gear:</b></p>
+        <ol>
+          <li>Log in to <a href="https://gear.thomascreagh.com/myloans.html">My Loans</a>.</li>
+          <li>Open this loan and select <b>Get return codes</b>.</li>
+          <li>Put all of the gear back in its lockers and follow the return steps shown for that loan, including any required photos.</li>
+          <li>Select <b>Return gear</b> to finish the return.</li>
+        </ol>
+        <p>If you need help returning the gear, please contact Tom.</p>
     """)
