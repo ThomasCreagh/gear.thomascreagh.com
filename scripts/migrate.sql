@@ -39,3 +39,4 @@ ALTER TABLE items ADD COLUMN IF NOT EXISTS category VARCHAR;
 ALTER TABLE items ADD COLUMN IF NOT EXISTS image_path VARCHAR;
 ALTER TABLE loans ADD COLUMN IF NOT EXISTS start_date TIMESTAMP;
 ALTER TABLE gear_groups ADD COLUMN IF NOT EXISTS group_ids JSONB NOT NULL DEFAULT '[]'::jsonb;
+UPDATE loans SET status = 'active' WHERE status = 'pending_verification';

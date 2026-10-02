@@ -74,8 +74,8 @@ class Loan(Base):
     due_date = Column(DateTime)
     # For outdoor loans this may be a future booking date; T-wall loans start now.
     start_date = Column(DateTime)
-    # pending_review | pending_verification | active | returned | denied
-    status = Column(String, default="pending_verification")
+    # pending_review | active | returned | denied
+    status = Column(String, default="active")
     # standard | twall
     loan_type = Column(String, default="standard")
     created_at = Column(DateTime, default=datetime.utcnow)

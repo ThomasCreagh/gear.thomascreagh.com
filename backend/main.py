@@ -26,6 +26,9 @@ with engine.begin() as connection:
     connection.execute(text("ALTER TABLE items ADD COLUMN IF NOT EXISTS image_path VARCHAR"))
     connection.execute(text("ALTER TABLE loans ADD COLUMN IF NOT EXISTS start_date TIMESTAMP"))
     connection.execute(text("ALTER TABLE gear_groups ADD COLUMN IF NOT EXISTS group_ids JSONB NOT NULL DEFAULT '[]'::jsonb"))
+    # Loans created before the trust-based flow used this intermediate state.
+    # They no longer need a locker verification step.
+    connection.execute(text("UPDATE loans SET status = 'active' WHERE status = 'pending_verification'"))
 
 app = FastAPI(title="Gear Renting API", version="1.0.0")
 

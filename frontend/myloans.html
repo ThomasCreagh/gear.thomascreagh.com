@@ -231,25 +231,6 @@
       <div class="alert alert-error" id="modal-err-lockers-outside" style="margin-top:0.75rem"></div>
     </div>
 
-    <!-- Step 2: verify -->
-    <div id="modal-step-verify" style="display:none">
-      <div class="step-label">Enter the verification code</div>
-      <p style="font-size:0.85rem;color:var(--muted);margin-bottom:0.75rem">
-        The verification code is posted on the locker board. Enter it to receive your combination codes.
-      </p>
-      <div class="form-group">
-        <label>Verification code</label>
-        <input type="text" id="modal-verify-code" placeholder="Enter code…" autocomplete="off"
-          style="letter-spacing:0.1em;font-size:1.1rem;text-transform:uppercase"
-          onkeydown="if(event.key==='Enter')submitVerify()">
-      </div>
-      <div style="display:flex;gap:0.75rem">
-        <button class="btn btn-primary" onclick="submitVerify()">Unlock →</button>
-        <button class="btn btn-secondary" onclick="closeStartModal()">Cancel</button>
-      </div>
-      <div class="alert alert-error" id="modal-err-verify" style="margin-top:0.75rem"></div>
-    </div>
-
     <!-- Step 3: codes revealed -->
     <div id="modal-step-codes" style="display:none">
       <div class="step-label">✓ Loan started</div>
@@ -271,37 +252,9 @@
       </p>
       <div class="step-label">Step 2 — Awaiting approval</div>
       <p style="font-size:0.9rem;line-height:1.6;margin-bottom:0.75rem">
-        Your request has been sent to Tom for approval. You don't need to go to the locker yet —
-        you'll see an option to enter the verification code here once it's approved.
+        Your request has been sent to Tom for approval. Once approved, you can take and log the items directly.
       </p>
       <button class="btn btn-primary" onclick="closeStartModal()">Done — I'll wait</button>
-    </div>
-  </div>
-</div>
-
-<!-- ── Return Verify Modal ── -->
-<div class="modal-overlay" id="return-modal">
-  <div class="modal">
-    <h2>🔐 Unlock lockers to return</h2>
-    <p style="font-size:0.85rem;color:var(--muted);margin-bottom:0.75rem">
-      Enter the verification code on the locker board to receive your combination codes for returning the gear.
-    </p>
-    <div class="form-group">
-      <label>Verification code</label>
-      <input type="text" id="return-verify-code" placeholder="Enter code…" autocomplete="off"
-        style="letter-spacing:0.1em;font-size:1.1rem;text-transform:uppercase"
-        onkeydown="if(event.key==='Enter')submitReturnVerify()">
-    </div>
-    <div style="display:flex;gap:0.75rem">
-      <button class="btn btn-primary" onclick="submitReturnVerify()">Unlock →</button>
-      <button class="btn btn-secondary" onclick="closeReturnModal()">Cancel</button>
-    </div>
-    <div class="alert alert-error" id="return-err-verify" style="margin-top:0.75rem"></div>
-
-    <div id="return-codes-section" style="display:none;margin-top:1rem">
-      <div class="step-label">✓ Locker codes — put gear back, then confirm return below</div>
-      <div class="code-grid" id="return-codes-grid"></div>
-      <button class="btn btn-success" style="margin-top:0.5rem" onclick="closeReturnModal()">Done — I've returned the gear</button>
     </div>
   </div>
 </div>
@@ -334,7 +287,6 @@
   let allLoans = [];
   let gearGroups = [];
   let editState  = {};   // loanId → { item_ids }
-  let pendingReturnLoanId = null;   // which loan we're returning right now
   let pendingNewLoanId    = null;   // loan just created, awaiting verify
 
   // ── Init ──────────────────────────────────────────────────────────────────
@@ -377,7 +329,7 @@
 
   // ── Render ────────────────────────────────────────────────────────────────
   function render() {
-    const active = allLoans.filter(l => ["pending_review","pending_verification","active"].includes(l.status));
+    const active = allLoans.filter(l => ["pending_review", "active"].includes(l.status));
     const past   = allLoans.filter(l => ["returned","denied"].includes(l.status));
 
     const activeEl = document.getElementById("active-section");
@@ -395,7 +347,6 @@
 
   function renderTwallLoan(loan) {
     const isPendingReview = loan.status === "pending_review";
-    const isPendingVerify = loan.status === "pending_verification";
     const twallLabel = (loan.lockers || []).includes("pad") && (loan.lockers || []).includes("top")
       ? "Rope Climb + Boulder"
       : (loan.lockers || []).includes("top") ? "Rope Climb" : "Boulder";
@@ -405,28 +356,10 @@
            <div class="step-label">Step 1 — Contact Tom</div>
            <p style="font-size:0.85rem;color:var(--muted);margin-bottom:0.75rem">Message Tom on WhatsApp with your reason for renting gear, what you're planning to use it for, and when.</p>
            <div class="step-label">Step 2 — Awaiting approval</div>
-           <p style="font-size:0.85rem;color:var(--muted)">Your request has been sent to Tom for approval. You don't need to go to the locker yet — you'll see an option to enter the verification code here once it's approved.</p>
-         </div>`
-      : (!isPendingVerify && loan.locker_codes)
-      ? `<div class="step-block">
-           <div class="step-label">✓ Locker codes</div>
-           <div class="code-grid">
-             ${(loan.lockers || []).map(l => `
-               <div class="code-card">
-                 <div class="locker-name">${LOCKER_ICONS[l] || ''} ${LOCKER_LABELS[l] || l}</div>
-                 <div class="code">${loan.locker_codes[l] || "—"}</div>
-               </div>`).join("")}
-           </div>
-           <div class="step-block">
-             <button class="btn btn-success" onclick="confirmReturn(${loan.id})">✓ Done — return gear</button>
-           </div>
+           <p style="font-size:0.85rem;color:var(--muted)">Your request has been sent to Tom for approval. Once approved, you can take and log the items directly.</p>
          </div>`
       : `<div class="step-block">
-           <div class="step-label">Step 1 — Verify you're at the locker</div>
-           <p style="font-size:0.85rem;color:var(--muted);margin-bottom:0.75rem">
-             Enter the verification code on the locker board.
-           </p>
-           <button class="btn btn-primary" onclick="openVerifyForExisting(${loan.id})">Enter verification code →</button>
+           <button class="btn btn-success" onclick="confirmReturn(${loan.id})">✓ Done — return gear</button>
          </div>`;
 
     return `
@@ -436,7 +369,7 @@
             <div class="loan-title">🏔 Trinity Wall — ${twallLabel}</div>
             <div class="loan-meta">Today · ${(loan.lockers||[]).map(l=>LOCKER_LABELS[l]||l).join(", ")}</div>
           </div>
-          <span class="badge ${isPendingReview ? 'badge-yellow' : isPendingVerify ? 'badge-yellow' : 'badge-green'}">${isPendingReview ? 'Awaiting approval' : isPendingVerify ? 'Awaiting verification' : 'Active'}</span>
+          <span class="badge ${isPendingReview ? 'badge-yellow' : 'badge-green'}">${isPendingReview ? 'Awaiting approval' : 'Active'}</span>
         </div>
         ${codesHtml}
       </div>`;
@@ -446,30 +379,17 @@
     if (loan.loan_type === "twall") return renderTwallLoan(loan);
 
     const isPendingReview = loan.status === "pending_review";
-    const isPendingVerify = loan.status === "pending_verification";
     const due    = loan.due_date ? new Date(loan.due_date).toLocaleDateString() : "—";
-    const overdue = loan.due_date && !isPendingVerify && !isPendingReview && new Date(loan.due_date) < new Date();
+    const overdue = loan.due_date && !isPendingReview && new Date(loan.due_date) < new Date();
     const lockerList = (loan.lockers || []).map(l => LOCKER_LABELS[l] || l).join(", ") || "—";
 
     // Status badge
     let badgeClass = "badge-green", badgeText = "Active";
     if (isPendingReview)      { badgeClass = "badge-yellow"; badgeText = "Awaiting approval"; }
-    else if (isPendingVerify) { badgeClass = "badge-yellow"; badgeText = "Awaiting verification"; }
     else if (overdue)         { badgeClass = "badge-red";    badgeText = "Overdue"; }
 
     // Locker codes (only shown once verified)
-    const codesHtml = (!isPendingVerify && loan.locker_verified && loan.locker_codes)
-      ? `<div class="step-block">
-           <div class="step-label">Locker codes</div>
-           <div class="code-grid">
-             ${(loan.lockers || []).map(l => `
-               <div class="code-card">
-                 <div class="locker-name">${LOCKER_LABELS[l] || l}</div>
-                 <div class="code">${loan.locker_codes[l] || "—"}</div>
-               </div>`).join("")}
-           </div>
-         </div>`
-      : "";
+    const codesHtml = "";
 
     // Pending review / verify banner
     const pendingBanner = isPendingReview
@@ -477,15 +397,7 @@
            <div class="step-label">Step 1 — Contact Tom</div>
            <p style="font-size:0.85rem;color:var(--muted);margin-bottom:0.75rem">Message Tom on WhatsApp with your reason for renting gear, what you're planning to use it for, and when.</p>
            <div class="step-label">Step 2 — Awaiting approval</div>
-           <p style="font-size:0.85rem;color:var(--muted)">Your request has been sent to Tom for approval. You don't need to go to the locker yet — you'll see an option to enter the verification code here once it's approved.</p>
-         </div>`
-      : isPendingVerify
-      ? `<div class="step-block">
-           <div class="step-label">Step 1 — Verify you're at the locker</div>
-           <p style="font-size:0.85rem;color:var(--muted);margin-bottom:0.75rem">
-             Enter the verification code on the locker board to unlock your combination codes.
-           </p>
-           <button class="btn btn-primary" onclick="openVerifyForExisting(${loan.id})">Enter verification code →</button>
+           <p style="font-size:0.85rem;color:var(--muted)">Your request has been sent to Tom for approval. Once approved, you can take and log the items directly.</p>
          </div>`
       : "";
 
@@ -497,7 +409,7 @@
         <button onclick="removeChip(${loan.id},${id})" title="Remove">×</button>
       </span>`).join("");
 
-    const itemLoggingHtml = (!isPendingVerify && !isPendingReview)
+    const itemLoggingHtml = !isPendingReview
       ? `<div class="step-block">
            <div class="step-label">Step 2 — Log items taken</div>
            <div class="chip-list" id="chips-${loan.id}">${chipHtml || '<span style="color:var(--muted);font-size:0.85rem">No items logged yet</span>'}</div>
@@ -512,13 +424,12 @@
       : "";
 
     // Return section
-    const returnPhotosHtml = !isPendingVerify
+    const returnPhotosHtml = !isPendingReview
       ? `<div class="step-block">
            <div class="step-label">Step 3 — Return gear</div>
            <p style="font-size:0.85rem;color:var(--muted);margin-bottom:0.75rem">
              When you're back at the locker, get the codes to open it and return your gear.
            </p>
-           <button class="btn btn-secondary btn-sm" style="margin-bottom:1rem" onclick="openReturnVerify(${loan.id})">🔐 Get return codes</button>
            ${(loan.lockers || []).map(locker => {
              const done = (loan.photos || []).some(p => p.locker === locker && p.photo_type === "return");
              return `<div class="photo-card ${done ? 'done' : ''}">
@@ -597,19 +508,16 @@
     const today = new Date();
     const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
     const nextWeek = new Date(today); nextWeek.setDate(nextWeek.getDate() + 7);
-    const dateValue = date => date.toISOString().slice(0, 10);
+    const dateValue = date => [date.getFullYear(), String(date.getMonth() + 1).padStart(2, "0"), String(date.getDate()).padStart(2, "0")].join("-");
     document.getElementById("modal-start-date").min = dateValue(today);
     document.getElementById("modal-end-date").min = dateValue(today);
     document.getElementById("modal-start-date").value = dateValue(today);
     document.getElementById("modal-end-date").value = dateValue(nextWeek);
-    document.getElementById("modal-verify-code").value = "";
     document.getElementById("modal-err-lockers").style.display = "none";
-    document.getElementById("modal-err-verify").style.display  = "none";
     document.getElementById("modal-step-disclaimer").style.display = "block";
     document.getElementById("modal-step-location").style.display  = "none";
     document.getElementById("modal-step-twall").style.display     = "none";
     document.getElementById("modal-step-lockers").style.display   = "none";
-    document.getElementById("modal-step-verify").style.display    = "none";
     document.getElementById("modal-step-codes").style.display     = "none";
     document.getElementById("modal-step-review").style.display    = "none";
     document.getElementById("loc-inside").classList.remove("selected-inside");
@@ -712,79 +620,6 @@
         document.getElementById("modal-due-date").textContent = new Date(loan.due_date).toLocaleDateString();
         document.getElementById("modal-codes-grid").innerHTML = "";
       }
-      await reload();
-    } catch (e) { showError(errEl, e.message); }
-  }
-
-  async function submitVerify() {
-    const code  = document.getElementById("modal-verify-code").value.trim();
-    const errEl = document.getElementById("modal-err-verify");
-    errEl.style.display = "none";
-    if (!code) return showError(errEl, "Enter the verification code.");
-
-    try {
-      const res = await apiFetch(`/loans/${pendingNewLoanId}/verify`, {
-        method:"POST", body: JSON.stringify({ verification_code: code })
-      });
-      // Show codes
-      document.getElementById("modal-step-verify").style.display = "none";
-      document.getElementById("modal-step-codes").style.display  = "block";
-      document.getElementById("modal-due-date").textContent = new Date(res.due_date).toLocaleDateString();
-      document.getElementById("modal-codes-grid").innerHTML = Object.entries(res.locker_codes).map(([l, c]) => `
-        <div class="code-card">
-          <div class="locker-name">${LOCKER_ICONS[l] || ''} ${LOCKER_LABELS[l] || l}</div>
-          <div class="code">${c}</div>
-        </div>`).join("");
-      await reload();
-    } catch (e) { showError(errEl, e.message); }
-  }
-
-  // Verify for a loan that was already created but not yet verified (e.g. page reload)
-  function openVerifyForExisting(loanId) {
-    pendingNewLoanId = loanId;
-    document.getElementById("modal-step-disclaimer").style.display = "none";
-    document.getElementById("modal-step-location").style.display  = "none";
-    document.getElementById("modal-step-twall").style.display    = "none";
-    document.getElementById("modal-step-lockers").style.display  = "none";
-    document.getElementById("modal-step-codes").style.display    = "none";
-    document.getElementById("modal-step-verify").style.display   = "block";
-    document.getElementById("modal-verify-code").value = "";
-    document.getElementById("modal-err-verify").style.display    = "none";
-    document.getElementById("start-modal").classList.add("open");
-    document.getElementById("modal-verify-code").focus();
-  }
-
-  // ── Return Verify Modal ───────────────────────────────────────────────────
-  function openReturnVerify(loanId) {
-    pendingReturnLoanId = loanId;
-    document.getElementById("return-verify-code").value = "";
-    document.getElementById("return-err-verify").style.display  = "none";
-    document.getElementById("return-codes-section").style.display = "none";
-    document.getElementById("return-modal").classList.add("open");
-    document.getElementById("return-verify-code").focus();
-  }
-
-  function closeReturnModal() {
-    document.getElementById("return-modal").classList.remove("open");
-    pendingReturnLoanId = null;
-  }
-
-  async function submitReturnVerify() {
-    const code  = document.getElementById("return-verify-code").value.trim();
-    const errEl = document.getElementById("return-err-verify");
-    errEl.style.display = "none";
-    if (!code) return showError(errEl, "Enter the verification code.");
-
-    try {
-      const res = await apiFetch(`/loans/${pendingReturnLoanId}/verify`, {
-        method:"POST", body: JSON.stringify({ verification_code: code })
-      });
-      document.getElementById("return-codes-grid").innerHTML = Object.entries(res.locker_codes).map(([l, c]) => `
-        <div class="code-card">
-          <div class="locker-name">${LOCKER_ICONS[l] || ''} ${LOCKER_LABELS[l] || l}</div>
-          <div class="code">${c}</div>
-        </div>`).join("");
-      document.getElementById("return-codes-section").style.display = "block";
       await reload();
     } catch (e) { showError(errEl, e.message); }
   }
