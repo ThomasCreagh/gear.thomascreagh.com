@@ -577,7 +577,16 @@
   }
 
   async function loadGearGroups() {
-    gearGroups = await apiFetch("/items/groups/all");
+    try {
+      gearGroups = await apiFetch("/items/groups/all");
+    } catch (e) {
+      // Keep the admin gear/users/loans tabs usable while an older backend is
+      // being restarted or has not deployed the optional groups route.
+      gearGroups = [];
+      document.getElementById("groups-table").innerHTML = '<tr><td colspan="3" style="color:var(--muted)">Gear groups are temporarily unavailable.</td></tr>';
+      renderGroupItemOptions();
+      return;
+    }
     document.getElementById("groups-table").innerHTML = gearGroups.map(group => `
       <tr>
         <td data-label="Name"><strong>${group.name}</strong></td>

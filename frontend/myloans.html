@@ -921,7 +921,11 @@
 
   // ── Helpers ───────────────────────────────────────────────────────────────
   async function reload() {
-    [allLoans, allItems, gearGroups] = await Promise.all([apiFetch("/loans/my"), apiFetch("/items"), apiFetch("/items/groups")]);
+    [allLoans, allItems, gearGroups] = await Promise.all([
+      apiFetch("/loans/my"),
+      apiFetch("/items"),
+      apiFetch("/items/groups").catch(() => []),
+    ]);
     render();
   }
 

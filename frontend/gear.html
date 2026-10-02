@@ -85,7 +85,10 @@
       if (!me.is_approved) { document.getElementById("not-approved").style.display = "block"; return; }
       if (me.is_locked) showError(document.getElementById("error"), "⚠️ Your account is locked due to overdue items. Contact Tom.");
       document.getElementById("main").style.display = "block";
-      [items, gearGroups] = await Promise.all([apiFetch("/items"), apiFetch("/items/groups")]);
+      [items, gearGroups] = await Promise.all([
+        apiFetch("/items"),
+        apiFetch("/items/groups").catch(() => []),
+      ]);
       renderCategories();
     } catch (e) { showError(document.getElementById("error"), e.message); }
   }
