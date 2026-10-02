@@ -30,6 +30,17 @@ def save_photo(file: UploadFile) -> str:
     return path
 
 
+def get_locker_codes(db: Session, lockers: List[str]) -> dict:
+    codes = {}
+    for locker in lockers:
+        row = db.query(models.LockerCode).filter(
+            models.LockerCode.locker == locker
+        ).order_by(models.LockerCode.id.desc()).first()
+        if row:
+            codes[locker] = row.code
+    return codes
+
+
 def expand_gear_group(group, db: Session, seen=None):
     seen = seen or set()
     if group.id in seen:
@@ -90,6 +101,7 @@ def create_loan(
     door_row = db.query(models.LockerCode).filter(
         models.LockerCode.locker == TWALL_DOOR_LOCKER
     ).order_by(models.LockerCode.id.desc()).first()
+    locker_codes = get_locker_codes(db, loan.lockers)
 
     db_loan = models.Loan(
         user_id=current_user.id,
@@ -99,6 +111,7 @@ def create_loan(
         status=initial_status,
         loan_type=loan_type,
         start_date=start_date,
+        locker_codes=locker_codes or None,
         door_code=door_row.code if door_row else None,
     )
     db.add(db_loan)

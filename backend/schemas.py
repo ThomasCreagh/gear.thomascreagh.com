@@ -131,6 +131,7 @@ class LoanOut(BaseModel):
     user_id: int
     item_ids: List[int]
     lockers: Optional[List[str]]
+    locker_codes: Optional[dict] = None
     door_code: Optional[str] = None
     due_date: Optional[datetime]
     start_date: Optional[datetime] = None

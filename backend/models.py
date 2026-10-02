@@ -70,6 +70,7 @@ class Loan(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     item_ids = Column(JSON, nullable=False, default=list)  # filled after locker opened
     lockers = Column(JSON)             # ["outdoor", "top"] — chosen at loan creation
+    locker_codes = Column(JSON)        # Locker combinations snapshot for this loan
     door_code = Column(String)         # Trinity Wall door code issued with every loan
     due_date = Column(DateTime)
     # For outdoor loans this may be a future booking date; T-wall loans start now.

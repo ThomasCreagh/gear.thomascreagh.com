@@ -137,7 +137,8 @@ def list_loans(active_only: bool = False, db: Session = Depends(get_db), admin: 
 
 @router.post("/locker-code")
 def update_locker_code(update: schemas.LockerCodeUpdate, db: Session = Depends(get_db), admin: models.User = Depends(get_admin_user)):
-    if update.locker not in (*models.LOCKERS, "twall_door"):
+    managed_lockers = tuple(locker for locker in models.LOCKERS if locker != "pad") + ("twall_door",)
+    if update.locker not in managed_lockers:
         raise HTTPException(status_code=400, detail="Invalid locker")
     code = update.code.strip()
     if not code:
@@ -152,7 +153,7 @@ def update_locker_code(update: schemas.LockerCodeUpdate, db: Session = Depends(g
 @router.get("/locker-code")
 def get_locker_codes(db: Session = Depends(get_db), admin: models.User = Depends(get_admin_user)):
     result = {}
-    for locker in (*models.LOCKERS, "twall_door"):
+    for locker in tuple(locker for locker in models.LOCKERS if locker != "pad") + ("twall_door",):
         row = db.query(models.LockerCode).filter(models.LockerCode.locker == locker).order_by(models.LockerCode.id.desc()).first()
         result[locker] = {"code": row.code if row else None, "updated_at": row.updated_at if row else None}
     return result

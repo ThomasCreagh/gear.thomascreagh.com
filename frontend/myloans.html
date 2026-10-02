@@ -186,10 +186,6 @@
           <span class="icon">🧗</span><span class="name">Rope Climb</span>
           <div style="font-size:0.7rem;color:var(--muted);margin-top:0.2rem">Top + Bottom locker</div>
         </div>
-        <div class="locker-btn" id="trinity-boulder" onclick="toggleTrinity('boulder')" style="flex:1;min-width:130px">
-          <span class="icon">🪨</span><span class="name">Boulder</span>
-          <div style="font-size:0.7rem;color:var(--muted);margin-top:0.2rem">Pad stash</div>
-        </div>
       </div>
       <p style="font-size:0.8rem;color:var(--muted);margin-bottom:1rem">T-wall loans are 1 day and auto-close after 24 hours.</p>
       <div style="display:flex;gap:0.75rem">
@@ -211,9 +207,6 @@
         </div>
         <div class="locker-btn" data-locker="bottom" onclick="toggleLocker(this)">
           <span class="icon">📦</span><span class="name">Bottom Locker</span>
-        </div>
-        <div class="locker-btn" data-locker="pad" onclick="toggleLocker(this)">
-          <span class="icon">🛏️</span><span class="name">Pad Stash</span>
         </div>
       </div>
       <div class="form-group">
@@ -238,6 +231,9 @@
         Take the gear you need, then log it in your loan below.
       </p>
       <div class="code-grid" id="modal-codes-grid"></div>
+      <p id="modal-door-code-row" style="font-size:0.85rem;color:var(--muted);margin-bottom:0.75rem;display:none">
+        Trinity Wall door code: <strong id="modal-door-code"></strong>
+      </p>
       <p style="font-size:0.8rem;color:var(--muted);margin-bottom:1rem">
         Due: <strong id="modal-due-date"></strong>
       </p>
@@ -347,10 +343,11 @@
 
   function renderTwallLoan(loan) {
     const isPendingReview = loan.status === "pending_review";
-    const doorCodeHtml = loan.door_code ? `<div class="step-block"><div class="step-label">Trinity Wall door code</div><div class="code-card"><div class="code">${loan.door_code}</div></div></div>` : "";
-    const twallLabel = (loan.lockers || []).includes("pad") && (loan.lockers || []).includes("top")
-      ? "Rope Climb + Boulder"
-      : (loan.lockers || []).includes("top") ? "Rope Climb" : "Boulder";
+    const doorCodeHtml = !isPendingReview && loan.door_code ? `<div class="step-block"><div class="step-label">Trinity Wall door code</div><div class="code-card"><div class="code">${loan.door_code}</div></div></div>` : "";
+    const twallLabel = "Rope Climb";
+    const lockerCodesHtml = !isPendingReview ? Object.entries(loan.locker_codes || {}).map(([locker, code]) =>
+      `<div class="code-card"><div class="locker-name">${LOCKER_LABELS[locker] || locker}</div><div class="code">${code}</div></div>`
+    ).join("") : "";
 
     const codesHtml = isPendingReview
       ? `<div class="step-block">
@@ -373,6 +370,7 @@
           <span class="badge ${isPendingReview ? 'badge-yellow' : 'badge-green'}">${isPendingReview ? 'Awaiting approval' : 'Active'}</span>
         </div>
         ${codesHtml}
+        ${lockerCodesHtml ? `<div class="step-block"><div class="step-label">Locker codes</div><div class="code-grid">${lockerCodesHtml}</div></div>` : ""}
         ${doorCodeHtml}
       </div>`;
   }
@@ -384,14 +382,16 @@
     const due    = loan.due_date ? new Date(loan.due_date).toLocaleDateString() : "—";
     const overdue = loan.due_date && !isPendingReview && new Date(loan.due_date) < new Date();
     const lockerList = (loan.lockers || []).map(l => LOCKER_LABELS[l] || l).join(", ") || "—";
-    const doorCodeHtml = loan.door_code ? `<div class="step-block"><div class="step-label">Trinity Wall door code</div><div class="code-card"><div class="code">${loan.door_code}</div></div></div>` : "";
+    const doorCodeHtml = !isPendingReview && loan.door_code ? `<div class="step-block"><div class="step-label">Trinity Wall door code</div><div class="code-card"><div class="code">${loan.door_code}</div></div></div>` : "";
 
     // Status badge
     let badgeClass = "badge-green", badgeText = "Active";
     if (isPendingReview)      { badgeClass = "badge-yellow"; badgeText = "Awaiting approval"; }
     else if (overdue)         { badgeClass = "badge-red";    badgeText = "Overdue"; }
 
-    const codesHtml = "";
+    const lockerCodesHtml = Object.entries(loan.locker_codes || {}).map(([locker, code]) =>
+      `<div class="code-card"><div class="locker-name">${LOCKER_LABELS[locker] || locker}</div><div class="code">${code}</div></div>`
+    ).join("");
 
     // Pending manual review banner
     const pendingBanner = isPendingReview
@@ -470,6 +470,7 @@
           <span class="badge ${badgeClass}">${badgeText}</span>
         </div>
         ${codesHtml}
+        ${lockerCodesHtml ? `<div class="step-block"><div class="step-label">Locker codes</div><div class="code-grid">${lockerCodesHtml}</div></div>` : ""}
         ${doorCodeHtml}
         ${pendingBanner}
         ${itemLoggingHtml}
@@ -507,7 +508,6 @@
     currentLoanMode = null;
     document.querySelectorAll(".locker-btn").forEach(b => b.classList.remove("selected"));
     document.getElementById("trinity-rope").classList.remove("selected");
-    document.getElementById("trinity-boulder").classList.remove("selected");
     const today = new Date();
     const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
     const nextWeek = new Date(today); nextWeek.setDate(nextWeek.getDate() + 7);
@@ -522,6 +522,7 @@
     document.getElementById("modal-step-twall").style.display     = "none";
     document.getElementById("modal-step-lockers").style.display   = "none";
     document.getElementById("modal-step-codes").style.display     = "none";
+    document.getElementById("modal-door-code-row").style.display = "none";
     document.getElementById("modal-step-review").style.display    = "none";
     document.getElementById("loc-inside").classList.remove("selected-inside");
     document.getElementById("loc-outside").classList.remove("selected-outside");
@@ -562,16 +563,7 @@
 
   function toggleTrinity(type) {
     const ropeBtn    = document.getElementById("trinity-rope");
-    const boulderBtn = document.getElementById("trinity-boulder");
-    const topBtn     = document.querySelector('[data-locker="top"]');
-    const bottomBtn  = document.querySelector('[data-locker="bottom"]');
-    const padBtn     = document.querySelector('[data-locker="pad"]');
-
-    if (type === "rope") {
-      ropeBtn.classList.toggle("selected");
-    } else {
-      boulderBtn.classList.toggle("selected");
-    }
+    if (type === "rope") ropeBtn.classList.toggle("selected");
   }
 
   async function modalNextToLoan() {
@@ -582,11 +574,9 @@
       errEl = document.getElementById("modal-err-lockers");
       errEl.style.display = "none";
       const ropeOn    = document.getElementById("trinity-rope").classList.contains("selected");
-      const boulderOn = document.getElementById("trinity-boulder").classList.contains("selected");
       selected = [];
       if (ropeOn)    selected.push("top", "bottom");
-      if (boulderOn) selected.push("pad");
-      if (!selected.length) return showError(errEl, "Select Rope Climb, Boulder, or both.");
+      if (!selected.length) return showError(errEl, "Select Rope Climb.");
       days = 1;
     } else {
       errEl = document.getElementById("modal-err-lockers-outside");
@@ -621,7 +611,13 @@
       } else {
         document.getElementById("modal-step-codes").style.display = "block";
         document.getElementById("modal-due-date").textContent = new Date(loan.due_date).toLocaleDateString();
-        document.getElementById("modal-codes-grid").innerHTML = "";
+        document.getElementById("modal-codes-grid").innerHTML = Object.entries(loan.locker_codes || {}).map(([locker, code]) => `
+          <div class="code-card"><div class="locker-name">${LOCKER_LABELS[locker] || locker}</div><div class="code">${code}</div></div>
+        `).join("");
+        if (loan.door_code) {
+          document.getElementById("modal-door-code").textContent = loan.door_code;
+          document.getElementById("modal-door-code-row").style.display = "block";
+        }
       }
       await reload();
     } catch (e) { showError(errEl, e.message); }
