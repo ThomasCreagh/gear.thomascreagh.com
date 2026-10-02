@@ -1,6 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 from typing import List
+import os
+import shutil
+import uuid
+from config import read_secret
 
 from database import get_db
 import models
@@ -8,6 +12,28 @@ import schemas
 from auth import get_approved_user, get_admin_user
 
 router = APIRouter(prefix="/items", tags=["items"])
+UPLOAD_DIR = read_secret("UPLOAD_DIR", "uploads")
+ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
+
+
+@router.post("/{item_id}/image", response_model=schemas.ItemOut)
+def upload_item_image(item_id: int, image: UploadFile = File(...), db: Session = Depends(get_db), admin: models.User = Depends(get_admin_user)):
+    item = db.get(models.Item, item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    if image.content_type not in ALLOWED_IMAGE_TYPES:
+        raise HTTPException(status_code=400, detail="Upload a JPEG, PNG, WebP, or GIF image")
+    ext = os.path.splitext(image.filename or "")[1].lower() or ".jpg"
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    filename = f"gear-{uuid.uuid4()}{ext}"
+    path = os.path.join(UPLOAD_DIR, filename)
+    with open(path, "wb") as destination:
+        shutil.copyfileobj(image.file, destination)
+    item.image_path = filename
+    db.add(models.AuditLog(user_id=admin.id, action="item_image_uploaded", details=f"Item {item_id}"))
+    db.commit()
+    db.refresh(item)
+    return item
 
 
 def validate_group_items(item_ids: List[int], db: Session):
@@ -17,6 +43,15 @@ def validate_group_items(item_ids: List[int], db: Session):
     found = db.query(models.Item).filter(models.Item.id.in_(unique_ids)).count()
     if found != len(unique_ids):
         raise HTTPException(status_code=400, detail="One or more selected items do not exist")
+    return unique_ids
+
+
+def validate_group_ids(group_ids: List[int], db: Session, current_id: int | None = None):
+    unique_ids = list(dict.fromkeys(group_ids or []))
+    if current_id in unique_ids:
+        raise HTTPException(status_code=400, detail="A gear group cannot contain itself")
+    if unique_ids and db.query(models.GearGroup).filter(models.GearGroup.id.in_(unique_ids)).count() != len(unique_ids):
+        raise HTTPException(status_code=400, detail="One or more selected sub-groups do not exist")
     return unique_ids
 
 
@@ -37,7 +72,13 @@ def create_gear_group(group: schemas.GearGroupCreate, db: Session = Depends(get_
         raise HTTPException(status_code=400, detail="A group name is required")
     if db.query(models.GearGroup).filter(models.GearGroup.name == name).first():
         raise HTTPException(status_code=400, detail="A group with that name already exists")
-    db_group = models.GearGroup(name=name, item_ids=validate_group_items(group.item_ids, db))
+    if not group.item_ids and not group.group_ids:
+        raise HTTPException(status_code=400, detail="Add at least one item or sub-group")
+    db_group = models.GearGroup(
+        name=name,
+        item_ids=validate_group_items(group.item_ids, db) if group.item_ids else [],
+        group_ids=validate_group_ids(group.group_ids, db),
+    )
     db.add(db_group)
     db.add(models.AuditLog(user_id=admin.id, action="gear_group_created", details=f"{name}: {db_group.item_ids}"))
     db.commit()
@@ -57,7 +98,10 @@ def update_gear_group(group_id: int, update: schemas.GearGroupCreate, db: Sessio
     if same_name_group and same_name_group.id != group_id:
         raise HTTPException(status_code=400, detail="A group with that name already exists")
     group.name = name
-    group.item_ids = validate_group_items(update.item_ids, db)
+    if not update.item_ids and not update.group_ids:
+        raise HTTPException(status_code=400, detail="Add at least one item or sub-group")
+    group.item_ids = validate_group_items(update.item_ids, db) if update.item_ids else []
+    group.group_ids = validate_group_ids(update.group_ids, db, group_id)
     db.add(models.AuditLog(user_id=admin.id, action="gear_group_updated", details=f"{name}: {group.item_ids}"))
     db.commit()
     db.refresh(group)

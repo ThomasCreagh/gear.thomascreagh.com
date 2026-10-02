@@ -10,8 +10,9 @@ from database import get_db
 import models
 import schemas
 from auth import get_approved_user, get_admin_user
-from mailer import send_loan_approved, send_loan_pending_admin, send_overdue_notice
+from mailer import send_loan_approved, send_loan_pending_admin
 from config import read_secret
+from services.overdue import send_overdue_reminders
 
 router = APIRouter(prefix="/loans", tags=["loans"])
 
@@ -51,9 +52,22 @@ def get_verification_code(db: Session) -> str | None:
     return row.code if row else None
 
 
+def expand_gear_group(group, db: Session, seen=None):
+    seen = seen or set()
+    if group.id in seen:
+        raise HTTPException(status_code=400, detail="Circular gear group nesting detected")
+    seen.add(group.id)
+    ids = list(group.item_ids or [])
+    for child_id in (group.group_ids or []):
+        child = db.get(models.GearGroup, child_id)
+        if child:
+            ids.extend(expand_gear_group(child, db, seen.copy()))
+    return list(dict.fromkeys(ids))
+
+
 # ---------------------------------------------------------------------------
-# Create loan — user is at the locker, picks which lockers + how many days.
-# No items selected yet; those are logged after opening the locker.
+# Create a loan or future outdoor booking.  Physical locker verification is no
+# longer part of borrowing: trusted users can log what they take directly.
 # ---------------------------------------------------------------------------
 @router.post("", response_model=schemas.LoanOut)
 def create_loan(
@@ -65,7 +79,11 @@ def create_loan(
         raise HTTPException(
             status_code=403, detail="Your account is locked due to overdue items.")
 
-    if loan.days > MAX_LOAN_DAYS or loan.days < 1:
+    loan_type = loan.loan_type or "standard"
+    if loan_type not in ("standard", "twall"):
+        raise HTTPException(status_code=400, detail="Invalid loan type")
+    days = loan.days or 1
+    if days > MAX_LOAN_DAYS or days < 1:
         raise HTTPException(
             status_code=400, detail=f"Days must be 1–{MAX_LOAN_DAYS}")
 
@@ -79,8 +97,18 @@ def create_loan(
         raise HTTPException(
             status_code=400, detail="Select at least one locker")
 
-    due_date = datetime.utcnow() + timedelta(days=loan.days)
-    initial_status = "pending_verification" if current_user.auto_approve else "pending_review"
+    now = datetime.utcnow()
+    if loan_type == "twall":
+        start_date = now
+        days = 1
+    else:
+        start_date = loan.start_date or now
+        # Outdoor bookings must be today or later; dates are stored at midnight
+        # when chosen through the date input.
+        if start_date.date() < now.date():
+            raise HTTPException(status_code=400, detail="Outdoor bookings cannot start in the past")
+    due_date = start_date + timedelta(days=days)
+    initial_status = "active" if current_user.auto_approve else "pending_review"
 
     db_loan = models.Loan(
         user_id=current_user.id,
@@ -90,13 +118,14 @@ def create_loan(
         locker_verified=False,
         due_date=due_date,
         status=initial_status,
-        loan_type=loan.loan_type or "standard",
+        loan_type=loan_type,
+        start_date=start_date,
     )
     db.add(db_loan)
     db.add(models.AuditLog(
         user_id=current_user.id,
         action="loan_created",
-        details=f"type={'trinity_wall' if loan.loan_type == 'twall' else 'outside'}, lockers={loan.lockers}, days={loan.days}, status={initial_status}",
+        details=f"type={'trinity_wall' if loan_type == 'twall' else 'outside'}, lockers={loan.lockers}, start={start_date.isoformat()}, days={days}, status={initial_status}",
     ))
     db.commit()
     db.refresh(db_loan)
@@ -231,12 +260,15 @@ def add_gear_group_to_loan(
         raise HTTPException(status_code=400, detail="Can only add a gear group to an active loan")
 
     group = db.query(models.GearGroup).filter(models.GearGroup.id == group_id).first()
-    if not group or not group.item_ids:
+    if not group:
         raise HTTPException(status_code=404, detail="Gear group not found or has no items")
 
-    items = db.query(models.Item).filter(models.Item.id.in_(group.item_ids)).all()
+    expanded_ids = expand_gear_group(group, db)
+    if not expanded_ids:
+        raise HTTPException(status_code=404, detail="Gear group has no items")
+    items = db.query(models.Item).filter(models.Item.id.in_(expanded_ids)).all()
     items_by_id = {item.id: item for item in items}
-    missing_ids = set(group.item_ids) - set(items_by_id)
+    missing_ids = set(expanded_ids) - set(items_by_id)
     if missing_ids:
         raise HTTPException(status_code=400, detail=f"{group.name} contains deleted gear")
     unavailable = [item for item in items if not item.available or item.status != "active"]
@@ -246,7 +278,7 @@ def add_gear_group_to_loan(
     if wrong_locker:
         raise HTTPException(status_code=400, detail=f"Open the required locker(s) before adding {group.name}")
 
-    new_item_ids = list(dict.fromkeys((loan.item_ids or []) + group.item_ids))
+    new_item_ids = list(dict.fromkeys((loan.item_ids or []) + expanded_ids))
     for item in items:
         item.available = False
     loan.item_ids = new_item_ids
@@ -406,7 +438,7 @@ def set_verification_code(
 
 
 # ---------------------------------------------------------------------------
-# Admin: approve / deny (kept for edge cases; codes still gate-kept by verify)
+# Admin: approve / deny. Approval makes a requested loan active immediately.
 # ---------------------------------------------------------------------------
 @router.post("/{loan_id}/approve")
 def approve_loan(
@@ -417,7 +449,7 @@ def approve_loan(
     loan = db.query(models.Loan).filter(models.Loan.id == loan_id).first()
     if not loan or loan.status != "pending_review":
         raise HTTPException(status_code=404, detail="No pending review for this loan")
-    loan.status = "pending_verification"
+    loan.status = "active"
     db.add(models.AuditLog(user_id=admin.id,
            action="loan_approved", details=f"Loan {loan_id}"))
     db.commit()
@@ -431,7 +463,7 @@ def deny_loan(
     admin: models.User = Depends(get_admin_user),
 ):
     loan = db.query(models.Loan).filter(models.Loan.id == loan_id).first()
-    if not loan or loan.status not in ("pending_review", "pending_verification", "active"):
+    if not loan or loan.status not in ("pending_review", "active"):
         raise HTTPException(status_code=404, detail="Loan not found")
     loan.status = "denied"
     db.add(models.AuditLog(user_id=admin.id,
@@ -529,39 +561,5 @@ def send_overdue_emails(
     db: Session = Depends(get_db),
     admin: models.User = Depends(get_admin_user),
 ):
-    now = datetime.utcnow()
-    overdue_loans = db.query(models.Loan).filter(
-        models.Loan.status == "active",
-        models.Loan.due_date < now,
-    ).all()
-
-    notified = []
-    for loan in overdue_loans:
-        user = db.query(models.User).filter(models.User.id == loan.user_id).first()
-        if not user:
-            continue
-
-        # Build item name list
-        item_names = []
-        for item_id in (loan.item_ids or []):
-            item = db.query(models.Item).filter(models.Item.id == item_id).first()
-            if item:
-                label = f"#{item.tag} {item.name}" if item.tag else item.name
-                if item.description:
-                    label += f" — {item.description}"
-                item_names.append(label)
-
-        due_str = loan.due_date.strftime("%d %b %Y") if loan.due_date else "unknown"
-        item_names_with_due = [f"Due {due_str}"] + (item_names or ["(no items logged)"])
-
-        send_overdue_notice(user.email, item_names_with_due)
-
-        db.add(models.AuditLog(
-            user_id=admin.id,
-            action="overdue_notice_sent",
-            details=f"Loan {loan.id}, user {user.email}",
-        ))
-        notified.append({"loan_id": loan.id, "user": user.email})
-
-    db.commit()
+    notified = send_overdue_reminders(db, admin.id)
     return {"notified": notified, "count": len(notified)}

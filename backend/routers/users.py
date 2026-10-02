@@ -6,6 +6,7 @@ from database import get_db
 import models
 import schemas
 from auth import verify_password, create_access_token, get_current_user, hash_password
+from services.users import find_user_by_email
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -13,8 +14,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 @router.post("/login", response_model=schemas.TokenResponse)
 def login(request: schemas.LoginRequest, db: Session = Depends(get_db)):
     # Accepts JSON: {"email": "...", "password": "..."}
-    user = db.query(models.User).filter(
-        models.User.email == request.email).first()
+    user = find_user_by_email(db, request.email)
     if not user or not verify_password(request.password, user.password_hash):
         raise HTTPException(
             status_code=401, detail="Invalid email or password")
@@ -23,7 +23,7 @@ def login(request: schemas.LoginRequest, db: Session = Depends(get_db)):
 
     # Audit log
     log = models.AuditLog(user_id=user.id, action="login",
-                          details=f"Login from {request.email}")
+                          details=f"Login from {user.email}")
     db.add(log)
     db.commit()
 

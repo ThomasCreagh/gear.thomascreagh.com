@@ -7,6 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 from config import read_secret
 from apscheduler.schedulers.background import BackgroundScheduler
+from sqlalchemy import text
 import os
 import logging
 
@@ -17,6 +18,14 @@ logger = logging.getLogger("uvicorn.error")
 UPLOAD_DIR = read_secret("UPLOAD_DIR", "uploads")
 
 models.Base.metadata.create_all(bind=engine)
+
+# ``create_all`` does not alter tables that already exist. Keep additive,
+# backwards-compatible fields in sync for installations that upgrade without
+# running the optional SQL migration script first.
+with engine.begin() as connection:
+    connection.execute(text("ALTER TABLE items ADD COLUMN IF NOT EXISTS image_path VARCHAR"))
+    connection.execute(text("ALTER TABLE loans ADD COLUMN IF NOT EXISTS start_date TIMESTAMP"))
+    connection.execute(text("ALTER TABLE gear_groups ADD COLUMN IF NOT EXISTS group_ids JSONB NOT NULL DEFAULT '[]'::jsonb"))
 
 app = FastAPI(title="Gear Renting API", version="1.0.0")
 

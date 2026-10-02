@@ -1,46 +1,7 @@
 from pydantic import BaseModel, EmailStr
 from typing import Optional, List, Dict
 from datetime import datetime
-
-LOCKERS = ["outdoor", "top", "bottom", "pad"]
-LOCKER_LABELS = {
-    "outdoor": "Outdoor Locker",
-    "top": "Top Locker",
-    "bottom": "Bottom Locker",
-    "pad": "Pad Stash",
-}
-
-CATEGORIES = [
-    "harness",
-    "pad",
-    "rope",
-    "cam",
-    "quickdraw",
-    "nut",
-    "carabiner",
-    "helmet",
-    "belay_device",
-    "sling",
-    "rope_protector",
-    "misc_trad",
-    "misc",
-]
-
-CATEGORY_LABELS = {
-    "harness": "Harness",
-    "pad": "Pad",
-    "rope": "Rope",
-    "cam": "Cam",
-    "quickdraw": "Quickdraw",
-    "nut": "Nut",
-    "carabiner": "Carabiner",
-    "helmet": "Helmet",
-    "belay_device": "Belay Device",
-    "sling": "Sling",
-    "rope_protector": "Rope Protector",
-    "misc_trad": "Misc Trad",
-    "misc": "Misc",
-}
+from constants import CATEGORIES, CATEGORY_LABELS, LOCKERS, LOCKER_LABELS
 
 # Auth
 
@@ -101,6 +62,7 @@ class ItemOut(BaseModel):
     id: int
     name: str
     description: Optional[str]
+    image_path: Optional[str] = None
     tag: Optional[str]
     locker: Optional[str]
     category: Optional[str]
@@ -116,13 +78,15 @@ class ItemOut(BaseModel):
 
 class GearGroupCreate(BaseModel):
     name: str
-    item_ids: List[int]
+    item_ids: List[int] = []
+    group_ids: List[int] = []
 
 
 class GearGroupOut(BaseModel):
     id: int
     name: str
     item_ids: List[int]
+    group_ids: List[int] = []
 
     class Config:
         from_attributes = True
@@ -146,7 +110,8 @@ class LoanPhotoOut(BaseModel):
 
 class LoanCreate(BaseModel):
     lockers: List[str]
-    days: int
+    days: Optional[int] = None
+    start_date: Optional[datetime] = None
     loan_type: Optional[str] = "standard"  # standard | twall
 
 
@@ -172,6 +137,7 @@ class LoanOut(BaseModel):
     lockers: Optional[List[str]]
     locker_verified: bool = False
     due_date: Optional[datetime]
+    start_date: Optional[datetime] = None
     status: str
     loan_type: str = "standard"
     created_at: datetime

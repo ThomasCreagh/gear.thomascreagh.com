@@ -134,7 +134,7 @@
   <div class="modal">
     <h2>Start a Loan</h2>
     <p style="font-size:0.85rem;color:var(--muted);margin-bottom:1rem">
-      Select the lockers you need to open, then enter the verification code on the locker to receive the combination codes.
+      Choose where you will use the gear, then log exactly what you take.
     </p>
 
     <!-- Step -1: Safety disclaimer -->
@@ -201,7 +201,7 @@
 
     <!-- Step 1b: Outside lockers -->
     <div id="modal-step-lockers" style="display:none">
-      <div class="step-label">Step 1 — Which lockers do you need?</div>
+      <div class="step-label">Step 1 — Which lockers will you use?</div>
       <div class="locker-grid">
         <div class="locker-btn" data-locker="outdoor" onclick="toggleLocker(this)">
           <span class="icon">🧗</span><span class="name">Outdoor Locker</span>
@@ -217,9 +217,12 @@
         </div>
       </div>
       <div class="form-group">
-        <label>How many days?</label>
-        <input type="number" id="modal-days" min="1" max="14" value="3" style="width:120px">
-        <span style="font-size:0.8rem;color:var(--muted)">(max 14)</span>
+        <label>Booking dates</label>
+        <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+          <input type="date" id="modal-start-date" aria-label="Start date">
+          <span>to</span>
+          <input type="date" id="modal-end-date" aria-label="End date">
+        </div>
       </div>
       <div style="display:flex;gap:0.75rem;margin-top:0.5rem">
         <button class="btn btn-primary" onclick="modalNextToVerify()">Next →</button>
@@ -230,7 +233,7 @@
 
     <!-- Step 2: verify -->
     <div id="modal-step-verify" style="display:none">
-      <div class="step-label">Step 2 — Enter the verification code</div>
+      <div class="step-label">Enter the verification code</div>
       <p style="font-size:0.85rem;color:var(--muted);margin-bottom:0.75rem">
         The verification code is posted on the locker board. Enter it to receive your combination codes.
       </p>
@@ -249,9 +252,9 @@
 
     <!-- Step 3: codes revealed -->
     <div id="modal-step-codes" style="display:none">
-      <div class="step-label">✓ Locker codes</div>
+      <div class="step-label">✓ Loan started</div>
       <p style="font-size:0.85rem;color:var(--muted);margin-bottom:0.75rem">
-        Use these codes to open your lockers. Take the gear you need, then log it in your loan below.
+        Take the gear you need, then log it in your loan below.
       </p>
       <div class="code-grid" id="modal-codes-grid"></div>
       <p style="font-size:0.8rem;color:var(--muted);margin-bottom:1rem">
@@ -320,20 +323,16 @@
   </div>
 </div>
 
+<script src="static/constants.js"></script>
 <script src="static/api.js"></script>
 <script>
   requireAuth();
 
-  const LOCKER_LABELS  = { outdoor:"Outdoor Locker", top:"Top Locker", bottom:"Bottom Locker", pad:"Pad Stash" };
   const LOCKER_ICONS   = { outdoor:"🧗", top:"🔝", bottom:"📦", pad:"🛏️" };
-  const CATEGORY_LABELS = {
-    harness:"Harness", pad:"Pad", rope:"Rope", cam:"Cam", quickdraw:"Quickdraw",
-    nut:"Nut", carabiner:"Carabiner", helmet:"Helmet", belay_device:"Belay Device",
-    sling:"Sling", rope_protector:"Rope Protector", misc_trad:"Misc Trad", misc:"Misc"
-  };
 
   let allItems = [];
   let allLoans = [];
+  let gearGroups = [];
   let editState  = {};   // loanId → { item_ids }
   let pendingReturnLoanId = null;   // which loan we're returning right now
   let pendingNewLoanId    = null;   // loan just created, awaiting verify
@@ -343,7 +342,7 @@
     try {
       const me = await getMe();
       if (me.is_approved) document.getElementById("start-loan-btn").style.display = "inline-block";
-      [allLoans, allItems] = await Promise.all([apiFetch("/loans/my"), apiFetch("/items")]);
+      [allLoans, allItems, gearGroups] = await Promise.all([apiFetch("/loans/my"), apiFetch("/items"), apiFetch("/items/groups")]);
       render();
     } catch (e) { showError(document.getElementById("error"), e.message); }
   }
@@ -351,6 +350,23 @@
   function itemName(id) {
     const item = allItems.find(i => i.id === id);
     return item ? (item.tag ? `#${item.tag} ${item.name}` : item.name) : `Item #${id}`;
+  }
+
+  function groupItems(group) {
+    return group.item_ids.map(id => allItems.find(item => item.id === id));
+  }
+
+  function groupAvailableForLoan(group, loan) {
+    return groupItems(group).every(item => item && item.available && item.status === "active"
+      && (!item.locker || (loan.lockers || []).includes(item.locker)));
+  }
+
+  function groupMatchesSearch(group, query) {
+    const itemText = groupItems(group).filter(Boolean).map(item => [
+      item.tag, item.name, item.description, item.category, CATEGORY_LABELS[item.category],
+    ].filter(Boolean).join(" ")).join(" ");
+    const childText = (group.group_ids || []).map(id => gearGroups.find(g => g.id === id)?.name || "").join(" ");
+    return `${group.name} ${childText} ${itemText}`.toLowerCase().includes(query);
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -480,8 +496,8 @@
            <div class="step-label">Step 2 — Log items taken</div>
            <div class="chip-list" id="chips-${loan.id}">${chipHtml || '<span style="color:var(--muted);font-size:0.85rem">No items logged yet</span>'}</div>
            <div class="tag-entry-block">
-             <div class="tag-label">📎 Enter item tag number or name</div>
-             <input type="text" placeholder="e.g. 042, BD Cam, harness…" id="search-${loan.id}"
+             <div class="tag-label">📎 Search item tag, name or gear group</div>
+             <input type="text" placeholder="e.g. 042, BD Cam, Trad Rack…" id="search-${loan.id}"
                oninput="searchItems(${loan.id})" autocomplete="off">
              <div style="font-size:0.75rem;color:#92400e;margin-top:0.35rem">Tag numbers are printed on each piece of gear</div>
            </div>
@@ -572,7 +588,14 @@
     document.querySelectorAll(".locker-btn").forEach(b => b.classList.remove("selected"));
     document.getElementById("trinity-rope").classList.remove("selected");
     document.getElementById("trinity-boulder").classList.remove("selected");
-    document.getElementById("modal-days").value = 3;
+    const today = new Date();
+    const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
+    const nextWeek = new Date(today); nextWeek.setDate(nextWeek.getDate() + 7);
+    const dateValue = date => date.toISOString().slice(0, 10);
+    document.getElementById("modal-start-date").min = dateValue(today);
+    document.getElementById("modal-end-date").min = dateValue(today);
+    document.getElementById("modal-start-date").value = dateValue(today);
+    document.getElementById("modal-end-date").value = dateValue(nextWeek);
     document.getElementById("modal-verify-code").value = "";
     document.getElementById("modal-err-lockers").style.display = "none";
     document.getElementById("modal-err-verify").style.display  = "none";
@@ -636,7 +659,7 @@
 
   async function modalNextToVerify() {
     const isTwall = currentLoanMode === "inside";
-    let selected, days, errEl;
+    let selected, days, start_date, errEl;
 
     if (isTwall) {
       errEl = document.getElementById("modal-err-lockers");
@@ -653,15 +676,24 @@
       errEl.style.display = "none";
       selected = [...document.querySelectorAll(".locker-btn[data-locker].selected")]
         .map(b => b.dataset.locker).filter(Boolean);
-      days = parseInt(document.getElementById("modal-days").value);
+      const start = document.getElementById("modal-start-date").value;
+      const end = document.getElementById("modal-end-date").value;
       if (!selected.length) return showError(errEl, "Select at least one locker.");
-      if (!days || days < 1 || days > 14) return showError(errEl, "Enter a valid number of days (1–14).");
+      if (!start || !end) return showError(errEl, "Choose a start and end date.");
+      const startAt = new Date(`${start}T00:00:00`);
+      const endAt = new Date(`${end}T00:00:00`);
+      if (endAt < startAt) return showError(errEl, "The end date cannot be before the start date.");
+      // A same-day booking is one day; later end dates use the date range.
+      days = Math.max(1, Math.round((endAt - startAt) / 86400000));
+      if (days > 14) return showError(errEl, "Outdoor loans can be up to 14 days.");
+      // Keep the selected calendar date stable across timezone conversion.
+      start_date = `${start}T00:00:00`;
     }
 
     try {
       const loan = await apiFetch("/loans", {
         method:"POST",
-        body: JSON.stringify({ lockers: selected, days, loan_type: isTwall ? "twall" : "standard" })
+        body: JSON.stringify({ lockers: selected, days, start_date, loan_type: isTwall ? "twall" : "standard" })
       });
       pendingNewLoanId = loan.id;
       document.getElementById("modal-step-twall").style.display   = "none";
@@ -670,8 +702,9 @@
       if (loan.status === "pending_review") {
         document.getElementById("modal-step-review").style.display = "block";
       } else {
-        document.getElementById("modal-step-verify").style.display  = "block";
-        document.getElementById("modal-verify-code").focus();
+        document.getElementById("modal-step-codes").style.display = "block";
+        document.getElementById("modal-due-date").textContent = new Date(loan.due_date).toLocaleDateString();
+        document.getElementById("modal-codes-grid").innerHTML = "";
       }
       await reload();
     } catch (e) { showError(errEl, e.message); }
@@ -757,7 +790,8 @@
     if (!q) { resultsEl.style.display = "none"; return; }
 
     const es = editState[loanId] || { item_ids: (allLoans.find(l=>l.id===loanId)||{}).item_ids||[] };
-    const filtered = allItems.filter(item => {
+    const matchingGroups = gearGroups.filter(group => groupMatchesSearch(group, q)).slice(0, 5);
+    const filteredItems = allItems.filter(item => {
       if (item.status !== "active") return false;
       if ((es.item_ids || []).includes(item.id)) return false;
       return (item.tag||"").toLowerCase().includes(q)
@@ -767,9 +801,18 @@
         || (item.description||"").toLowerCase().includes(q);
     }).slice(0, 10);
 
-    if (!filtered.length) { resultsEl.style.display = "none"; return; }
+    if (!filteredItems.length && !matchingGroups.length) { resultsEl.style.display = "none"; return; }
     resultsEl.style.display = "block";
-    resultsEl.innerHTML = filtered.map(item => `
+    const groupResults = matchingGroups.map(group => {
+      const available = groupAvailableForLoan(group, allLoans.find(loan => loan.id === loanId));
+      return `<div class="search-result-item ${available ? '' : 'unavailable'}"
+        onclick="${available ? `addGearGroup(${loanId},${group.id})` : ''}">
+        <strong>⛺ ${group.name}</strong>
+        <span style="color:var(--muted);font-size:0.8rem"> — ${group.item_ids.length} tagged items</span>
+        ${available ? '' : ' <span style="color:var(--danger);font-size:0.75rem">(not fully available or locker not opened)</span>'}
+      </div>`;
+    }).join("");
+    const itemResults = filteredItems.map(item => `
       <div class="search-result-item ${item.available ? '' : 'unavailable'}"
         onclick="${item.available ? `addItem(${loanId},${item.id})` : ''}">
         ${item.tag ? `<span class="badge badge-gray">#${item.tag}</span> ` : ''}
@@ -777,6 +820,7 @@
         ${item.description ? `<span style="color:var(--muted);font-size:0.8rem"> — ${item.description}</span>` : ''}
         ${item.available ? '' : ' <span style="color:var(--danger);font-size:0.75rem">(unavailable)</span>'}
       </div>`).join("");
+    resultsEl.innerHTML = groupResults + itemResults;
   }
   async function addItem(loanId, itemId) {
     if (!editState[loanId]) {
@@ -792,6 +836,13 @@
 
     document.getElementById(`search-${loanId}`).value = "";
     document.getElementById(`results-${loanId}`).style.display = "none";
+  }
+
+  async function addGearGroup(loanId, groupId) {
+    try {
+      await apiFetch(`/loans/${loanId}/gear-groups/${groupId}`, { method: "POST" });
+      await reload();
+    } catch (e) { showError(document.getElementById("error"), e.message); }
   }
 
   async function removeChip(loanId, itemId) {
@@ -837,20 +888,6 @@
     }
   }
 
-//  async function saveItems(loanId) {
-//    const es = editState[loanId];
-//    if (!es) return;
-//    const err = document.getElementById("error");
-//    const suc = document.getElementById("success");
-//    err.style.display = "none"; suc.style.display = "none";
-//    try {
-//      await apiFetch(`/loans/${loanId}`, { method:"PUT", body: JSON.stringify({ item_ids: es.item_ids }) });
-//      suc.textContent = "✓ Items saved."; suc.style.display = "block";
-//      delete editState[loanId];
-//      await reload();
-//    } catch (e) { showError(err, e.message); }
-//  }
-
   // ── Photos ────────────────────────────────────────────────────────────────
   async function uploadPhoto(loanId, locker, photoType, input) {
     const file = input.files[0];
@@ -878,7 +915,7 @@
 
   // ── Helpers ───────────────────────────────────────────────────────────────
   async function reload() {
-    [allLoans, allItems] = await Promise.all([apiFetch("/loans/my"), apiFetch("/items")]);
+    [allLoans, allItems, gearGroups] = await Promise.all([apiFetch("/loans/my"), apiFetch("/items"), apiFetch("/items/groups")]);
     render();
   }
 

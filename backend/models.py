@@ -2,48 +2,7 @@ from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, J
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from database import Base
-
-LOCKERS = ["outdoor", "top", "bottom", "pad"]
-LOCKER_LABELS = {
-    "outdoor": "Outdoor Locker",
-    "top": "Top Locker",
-    "bottom": "Bottom Locker",
-    "pad": "Pad Stash",
-}
-
-ITEM_STATUSES = ["active", "retired", "missing"]
-
-CATEGORIES = [
-    "harness",
-    "pad",
-    "rope",
-    "cam",
-    "quickdraw",
-    "nut",
-    "carabiner",
-    "helmet",
-    "belay_device",
-    "sling",
-    "rope_protector",
-    "misc_trad",
-    "misc",
-]
-
-CATEGORY_LABELS = {
-    "harness": "Harness",
-    "pad": "Pad",
-    "rope": "Rope",
-    "cam": "Cam",
-    "quickdraw": "Quickdraw",
-    "nut": "Nut",
-    "carabiner": "Carabiner",
-    "helmet": "Helmet",
-    "belay_device": "Belay Device",
-    "sling": "Sling",
-    "rope_protector": "Rope Protector",
-    "misc_trad": "Misc Trad",
-    "misc": "Misc",
-}
+from constants import CATEGORIES, CATEGORY_LABELS, ITEM_STATUSES, LOCKERS, LOCKER_LABELS
 
 
 class User(Base):
@@ -70,6 +29,8 @@ class Item(Base):
     name = Column(String, nullable=False)
     # model/spec: "BD C4 size 1 red"
     description = Column(String)
+    # Admin-uploaded reference photo, shown on the gear browser.
+    image_path = Column(String)
     # tag number as string e.g. "001"
     tag = Column(String)
     # outdoor | top | bottom | pad
@@ -97,6 +58,7 @@ class GearGroup(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False, unique=True)
     item_ids = Column(JSON, nullable=False, default=list)
+    group_ids = Column(JSON, nullable=False, default=list)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -110,6 +72,8 @@ class Loan(Base):
     lockers = Column(JSON)             # ["outdoor", "top"] — chosen at loan creation
     locker_verified = Column(Boolean, default=False)  # True once verification code entered
     due_date = Column(DateTime)
+    # For outdoor loans this may be a future booking date; T-wall loans start now.
+    start_date = Column(DateTime)
     # pending_review | pending_verification | active | returned | denied
     status = Column(String, default="pending_verification")
     # standard | twall

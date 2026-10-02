@@ -1,13 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
-from datetime import datetime
 import secrets
 
 from database import get_db
 import models, schemas
 from auth import get_admin_user, hash_password
-from mailer import send_account_created, send_overdue_notice
+from mailer import send_account_created
+from services.overdue import send_overdue_reminders
+from services.users import find_user_by_email, normalise_email
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -19,7 +20,8 @@ def list_users(db: Session = Depends(get_db), admin: models.User = Depends(get_a
 
 @router.post("/users")
 def create_user(email: str, db: Session = Depends(get_db), admin: models.User = Depends(get_admin_user)):
-    if db.query(models.User).filter(models.User.email == email).first():
+    email = normalise_email(email)
+    if find_user_by_email(db, email):
         raise HTTPException(status_code=400, detail="Email already exists")
     temp_password = secrets.token_urlsafe(10)
     user = models.User(email=email, password_hash=hash_password(temp_password), is_approved=True)
@@ -95,6 +97,7 @@ def list_loans(active_only: bool = False, db: Session = Depends(get_db), admin: 
             "lockers": loan.lockers,
             "locker_codes": loan.locker_codes,
             "due_date": loan.due_date,
+            "start_date": loan.start_date,
             "status": loan.status,
             "loan_type": loan.loan_type,
             "created_at": loan.created_at,
@@ -154,27 +157,5 @@ def audit_log(limit: int = 100, db: Session = Depends(get_db), admin: models.Use
 
 @router.post("/check-overdue")
 def check_overdue(db: Session = Depends(get_db), admin: models.User = Depends(get_admin_user)):
-    now = datetime.utcnow()
-    overdue = db.query(models.Loan).filter(models.Loan.status == "active", models.Loan.due_date < now).all()
-    notified = []
-    reminders = {}
-    for loan in overdue:
-        user = db.query(models.User).get(loan.user_id)
-        if not user:
-            continue
-        reminder = reminders.setdefault(user.id, {"user": user, "items": [], "loan_ids": []})
-        items = [db.query(models.Item).get(i) for i in (loan.item_ids or [])]
-        reminder["items"].extend(i.name for i in items if i)
-        reminder["loan_ids"].append(loan.id)
-
-    for reminder in reminders.values():
-        user = reminder["user"]
-        send_overdue_notice(user.email, reminder["items"] or ["(no items logged)"])
-        notified.append(user.email)
-        db.add(models.AuditLog(
-            user_id=admin.id,
-            action="overdue_notice_sent",
-            details=f"Loans {reminder['loan_ids']}, user {user.email}",
-        ))
-    db.commit()
-    return {"notified_users": notified, "count": len(notified)}
+    notified = send_overdue_reminders(db, admin.id)
+    return {"notified_users": [reminder["user"] for reminder in notified], "count": len(notified)}

@@ -28,6 +28,9 @@
     .modal label { font-size:0.8rem; font-weight:600; margin-top:0.3rem; }
     .modal input, .modal select { margin:0; }
     .modal-actions { display:flex; gap:0.5rem; margin-top:0.5rem; }
+    .admin-search { margin:0 0 0.75rem; width:100%; }
+    .table-sort { border:0; background:none; padding:0; color:inherit; font:inherit; font-weight:700; cursor:pointer; }
+    .table-sort:hover { color:var(--accent); }
 
     /* ── Mobile ── */
     @media (max-width: 640px) {
@@ -87,6 +90,8 @@
     <input type="text" id="edit-name">
     <label>Description</label>
     <input type="text" id="edit-desc">
+    <label>Gear photo</label>
+    <input type="file" id="edit-image" accept="image/jpeg,image/png,image/webp,image/gif">
     <label>Category</label>
     <select id="edit-category">
       <option value="">— None —</option>
@@ -138,6 +143,7 @@
   <div class="tabs">
     <button class="tab active" onclick="showTab('users', this)">Users</button>
     <button class="tab" onclick="showTab('items', this)">Gear</button>
+    <button class="tab" onclick="showTab('groups', this)">Gear Groups</button>
     <button class="tab" onclick="showTab('loans', this)">Loans <span id="pending-count" class="badge badge-yellow" style="display:none"></span></button>
     <button class="tab" onclick="showTab('stock', this)">Stock Check</button>
     <button class="tab" onclick="showTab('locker', this)">Locker Codes</button>
@@ -159,6 +165,8 @@
       <input type="email" id="new-email" placeholder="user@tcd.ie">
       <button type="button" class="btn btn-primary" onclick="createUser()">Create & Send Credentials</button>
     </div>
+    <input class="admin-search" id="users-search" type="search" placeholder="Search users…" aria-label="Search users"
+      oninput="filterTableRows('users-table', this.value)">
     <div class="card">
       <table>
         <thead><tr><th>Email</th><th>Approved</th><th>Auto-approve</th><th>Locked</th><th>Actions</th></tr></thead>
@@ -187,6 +195,10 @@
         <div class="form-group">
           <label>Description</label>
           <input type="text" id="new-item-desc" placeholder="BD C4 size 1 red">
+        </div>
+        <div class="form-group">
+          <label>Gear photo</label>
+          <input type="file" id="new-item-image" accept="image/jpeg,image/png,image/webp,image/gif">
         </div>
         <div class="form-group">
           <label>Category</label>
@@ -232,10 +244,45 @@
       </div>
       <button type="button" class="btn btn-primary" onclick="createItem()">Add Item</button>
     </div>
+    <input class="admin-search" id="items-search" type="search" placeholder="Search gear by tag, name, age, group or status…" aria-label="Search gear"
+      oninput="filterTableRows('items-table', this.value)">
     <div class="card">
       <table>
-        <thead><tr><th>Tag</th><th>Name</th><th>Category</th><th>Locker</th><th>Available</th><th>Status</th><th>Actions</th></tr></thead>
+        <thead><tr>
+          <th><button class="table-sort" onclick="sortItems('tag')">Tag <span data-sort-arrow="tag"></span></button></th>
+          <th><button class="table-sort" onclick="sortItems('name')">Name <span data-sort-arrow="name"></span></button></th>
+          <th><button class="table-sort" onclick="sortItems('category')">Category <span data-sort-arrow="category"></span></button></th>
+          <th><button class="table-sort" onclick="sortItems('age')">Age <span data-sort-arrow="age"></span></button></th>
+          <th><button class="table-sort" onclick="sortItems('locker')">Locker <span data-sort-arrow="locker"></span></button></th>
+          <th><button class="table-sort" onclick="sortItems('available')">Available <span data-sort-arrow="available"></span></button></th>
+          <th><button class="table-sort" onclick="sortItems('status')">Status <span data-sort-arrow="status"></span></button></th>
+          <th>Photo</th>
+          <th>Actions</th>
+        </tr></thead>
         <tbody id="items-table"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- GEAR GROUPS -->
+  <div class="section" id="tab-groups">
+    <h1>Gear Groups</h1>
+    <p style="color:var(--muted);font-size:0.9rem;margin-bottom:1rem">Create a named set of tagged items, such as a trad rack. Members can add the entire group to a loan in one step.</p>
+    <div class="card" style="margin-bottom:1rem">
+      <h2>Create Gear Group</h2>
+      <label>Group name</label>
+      <input type="text" id="new-group-name" placeholder="e.g. Trad Rack">
+      <label>Items in this group</label>
+      <div id="group-item-options" style="max-height:280px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius);padding:0.5rem"></div>
+      <label style="display:block;margin-top:0.75rem">Sub-groups (optional)</label>
+      <div id="group-group-options" style="max-height:180px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius);padding:0.5rem"></div>
+      <button type="button" class="btn btn-primary" id="save-group-btn" onclick="saveGearGroup()" style="margin-top:1rem">Create Group</button>
+      <button type="button" class="btn btn-secondary" id="cancel-group-edit-btn" onclick="cancelGearGroupEdit()" style="margin-top:1rem;display:none">Cancel</button>
+    </div>
+    <div class="card">
+      <table>
+        <thead><tr><th>Name</th><th>Included tags</th><th></th></tr></thead>
+        <tbody id="groups-table"></tbody>
       </table>
     </div>
   </div>
@@ -245,10 +292,12 @@
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:0.5rem">
       <h1>Loans</h1>
       <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center">
-        <button type="button" class="btn btn-secondary" onclick="checkOverdue()">Check Overdue</button>
+        <button type="button" class="btn btn-secondary" onclick="checkOverdue()">Send Overdue Reminders</button>
         <label class="toggle"><input type="checkbox" id="active-only" onchange="loadLoans()"> Active only</label>
       </div>
     </div>
+    <input class="admin-search" id="loans-search" type="search" placeholder="Search loans by user, item, locker or status…" aria-label="Search loans"
+      oninput="filterTableRows('loans-table', this.value)">
     <div class="card">
       <table id="loans-table-wrap">
         <thead><tr><th>User</th><th>Type</th><th>Items</th><th>Lockers</th><th>Due</th><th>Status</th><th>Return photos</th><th></th></tr></thead>
@@ -260,6 +309,8 @@
   <!-- STOCK CHECK -->
   <div class="section" id="tab-stock">
     <h1>Weekly Stock Check</h1>
+    <input class="admin-search" id="stock-search" type="search" placeholder="Search stock-check gear…" aria-label="Search stock-check gear"
+      oninput="filterElements('stock-list', '.stock-item', this.value)">
     <div class="card">
       <div id="stock-list"></div>
       <button type="button" class="btn btn-primary" onclick="submitStock()" style="margin-top:1rem">Submit Stock Check</button>
@@ -298,6 +349,8 @@
   </div>
   <div class="section" id="tab-audit">
     <h1>Audit Log</h1>
+    <input class="admin-search" id="audit-search" type="search" placeholder="Search audit log…" aria-label="Search audit log"
+      oninput="filterTableRows('audit-table', this.value)">
     <div class="card">
       <table>
         <thead><tr><th>Time</th><th>User</th><th>Action</th><th>Details</th></tr></thead>
@@ -307,20 +360,18 @@
   </div>
 </div>
 
+<script src="static/constants.js"></script>
 <script src="static/api.js"></script>
 <script>
-  const LOCKER_LABELS = { outdoor: "Outdoor Locker", top: "Top Locker", bottom: "Bottom Locker", pad: "Pad Stash" };
-  const CATEGORY_LABELS = {
-    harness:"Harness", pad:"Pad", rope:"Rope", cam:"Cam", quickdraw:"Quickdraw",
-    nut:"Nut", carabiner:"Carabiner", helmet:"Helmet", belay_device:"Belay Device",
-    sling:"Sling", rope_protector:"Rope Protector", misc_trad:"Misc Trad", misc:"Misc"
-  };
-  let allUsers = [], allItems = [], allLoans = [];
+  let allUsers = [], allItems = [], allLoans = [], gearGroups = [];
   let editingId = null;
+  let editingGroupId = null;
+  let itemSort = { key: null, dir: 1 };
 
   async function init() {
     await requireAdmin();
     await Promise.all([loadUsers(), loadItems(), loadLoans()]);
+    await loadGearGroups();
     loadLockerCodes();
     loadAudit();
   }
@@ -354,6 +405,37 @@
     setTimeout(() => el.style.display = "none", 4000);
   }
 
+  // --- Shared search helpers ---
+  function normaliseSearch(value) {
+    return (value || "").trim().toLowerCase();
+  }
+
+  function filterTableRows(bodyId, value) {
+    const query = normaliseSearch(value);
+    const body = document.getElementById(bodyId);
+    if (!body) return;
+    [...body.children].forEach(row => {
+      if (row.classList.contains("expandable")) return;
+      const matches = !query || row.textContent.toLowerCase().includes(query);
+      row.style.display = matches ? "" : "none";
+      const detailRow = row.nextElementSibling;
+      if (detailRow?.classList.contains("expandable")) {
+        detailRow.style.display = matches ? "" : "none";
+      }
+    });
+  }
+
+  function filterElements(containerId, selector, value) {
+    const query = normaliseSearch(value);
+    document.querySelectorAll(`#${containerId} ${selector}`).forEach(element => {
+      element.style.display = !query || element.textContent.toLowerCase().includes(query) ? "" : "none";
+    });
+  }
+
+  function restoreTableFilter(bodyId, inputId) {
+    filterTableRows(bodyId, document.getElementById(inputId)?.value);
+  }
+
   // --- USERS ---
   async function loadUsers() {
     allUsers = await apiFetch("/admin/users");
@@ -371,6 +453,7 @@
         </td>
       </tr>
     `).join("");
+    restoreTableFilter("users-table", "users-search");
   }
 
   async function createUser() {
@@ -394,13 +477,54 @@
   }
 
   // --- ITEMS ---
+  function gearAgeLabel(manufacturedDate) {
+    if (!manufacturedDate) return "—";
+    const match = String(manufacturedDate).match(/\b(19|20)\d{2}\b/);
+    if (!match) return manufacturedDate;
+    const years = Math.max(0, new Date().getFullYear() - Number(match[0]));
+    return `${years} year${years === 1 ? "" : "s"} (${match[0]})`;
+  }
+
+  function sortItems(key) {
+    itemSort = itemSort.key === key
+      ? { key, dir: itemSort.dir * -1 }
+      : { key, dir: 1 };
+    loadItems();
+  }
+
+  function itemSortValue(item, key) {
+    if (key === "age") {
+      const match = String(item.manufactured_date || "").match(/\b(19|20)\d{2}\b/);
+      return match ? new Date().getFullYear() - Number(match[0]) : Infinity;
+    }
+    if (key === "available") return item.available ? 1 : 0;
+    if (key === "tag") return item.tag || "";
+    return String(item[key] || "").toLowerCase();
+  }
+
   async function loadItems() {
     allItems = await apiFetch("/items/all");
+    if (itemSort.key) {
+      const { key, dir } = itemSort;
+      allItems.sort((a, b) => {
+        const av = itemSortValue(a, key), bv = itemSortValue(b, key);
+        if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
+        return String(av).localeCompare(String(bv), undefined, { numeric: true }) * dir;
+      });
+    }
+    document.querySelectorAll("[data-sort-arrow]").forEach(el => {
+      el.textContent = el.dataset.sortArrow === itemSort.key ? (itemSort.dir === 1 ? " ▲" : " ▼") : "";
+    });
     document.getElementById("items-table").innerHTML = allItems.map(i => `
       <tr style="${i.status !== 'active' ? 'opacity:0.5' : ''}">
         <td data-label="Tag"><span class="badge badge-gray">#${i.tag ?? '—'}</span></td>
-        <td data-label="Name">${i.name}</td>
+        <td data-label="Name">
+          ${i.image_path ? `<img src="/uploads/${i.image_path}" alt="" style="width:38px;height:38px;object-fit:cover;border-radius:4px;vertical-align:middle;margin-right:0.4rem">` : ''}
+          ${i.name}
+          <div data-item-group-tags="${i.id}" style="display:flex;gap:0.3rem;flex-wrap:wrap;margin-top:0.35rem"></div>
+        </td>
         <td data-label="Category">${i.category ? `<span class="badge badge-gray">${CATEGORY_LABELS[i.category] || i.category}</span>` : '—'}</td>
+        <td data-label="Age">${gearAgeLabel(i.manufactured_date)}</td>
         <td data-label="Locker">${i.locker ? `<span class="badge badge-gray">${LOCKER_LABELS[i.locker] || i.locker}</span>` : '—'}</td>
         <td data-label="Available"><span class="badge ${i.available ? 'badge-green' : 'badge-red'}">${i.available ? 'Yes' : 'No'}</span></td>
         <td data-label="Status">${
@@ -408,6 +532,12 @@
           i.status === 'missing' ? '<span class="badge badge-yellow">Missing</span>' :
           '<span class="badge badge-green">Active</span>'
         }</td>
+        <td data-label="Photo">
+          ${i.image_path ? `<img src="/uploads/${i.image_path}" alt="${i.name}" style="width:42px;height:42px;object-fit:cover;border-radius:4px;display:block;margin-bottom:0.25rem">` : ''}
+          <label class="btn btn-sm btn-secondary" style="cursor:pointer">${i.image_path ? 'Replace' : 'Upload'}
+            <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" style="display:none" onchange="handleItemImageUpload(${i.id}, this)">
+          </label>
+        </td>
         <td>
           ${i.status === 'active' ? `<button class="btn btn-sm btn-secondary" onclick="toggleItem(${i.id}, ${!i.available})">${i.available ? 'Mark Out' : 'Mark In'}</button>` : ''}
           <button class="btn btn-sm btn-primary" onclick="openEdit(${i.id})">Edit</button>
@@ -418,6 +548,110 @@
         </td>
       </tr>
     `).join("");
+    renderGroupItemOptions();
+    renderItemGroupTags();
+    restoreTableFilter("items-table", "items-search");
+  }
+
+  // --- GEAR GROUPS ---
+  function groupItemLabel(itemId) {
+    const item = allItems.find(item => item.id === itemId);
+    return item ? `${item.tag ? '#' + item.tag + ' ' : ''}${item.name}` : `Deleted item #${itemId}`;
+  }
+
+  function renderGroupItemOptions() {
+    const options = document.getElementById("group-item-options");
+    if (!options) return;
+    options.innerHTML = allItems.filter(item => item.status === "active").map(item => `
+      <label style="display:block;padding:0.3rem 0;cursor:pointer">
+        <input type="checkbox" name="group-item" value="${item.id}">
+        ${item.tag ? `<span class="badge badge-gray">#${item.tag}</span> ` : ''}${item.name}${item.description ? ` — ${item.description}` : ''}
+      </label>`).join("") || '<span style="color:var(--muted)">No active gear items yet.</span>';
+    const groupOptions = document.getElementById("group-group-options");
+    if (groupOptions) {
+      groupOptions.innerHTML = gearGroups
+        .filter(group => group.id !== editingGroupId)
+        .map(group => `<label style="display:block;padding:0.3rem 0;cursor:pointer"><input type="checkbox" name="group-group" value="${group.id}"> ⛺ ${group.name}</label>`)
+        .join("") || '<span style="color:var(--muted)">Create another group first to use it here.</span>';
+    }
+  }
+
+  async function loadGearGroups() {
+    gearGroups = await apiFetch("/items/groups/all");
+    document.getElementById("groups-table").innerHTML = gearGroups.map(group => `
+      <tr>
+        <td data-label="Name"><strong>${group.name}</strong></td>
+        <td data-label="Included tags">${group.item_ids.map(groupItemLabel).concat((group.group_ids || []).map(id => `⛺ ${gearGroups.find(g => g.id === id)?.name || `Group #${id}`}`)).join(", ")}</td>
+        <td>
+          <button class="btn btn-sm btn-primary" onclick="editGearGroup(${group.id})">Edit</button>
+          <button class="btn btn-sm btn-danger" onclick="deleteGearGroup(${group.id})">Delete</button>
+        </td>
+      </tr>`).join("") || '<tr><td colspan="3" style="color:var(--muted)">No gear groups yet.</td></tr>';
+    renderItemGroupTags();
+    renderGroupItemOptions();
+  }
+
+  function renderItemGroupTags() {
+    document.querySelectorAll("[data-item-group-tags]").forEach(el => {
+      const itemId = Number(el.dataset.itemGroupTags);
+      const names = gearGroups
+        .filter(group => group.item_ids.includes(itemId))
+        .map(group => group.name);
+      el.innerHTML = names.map(name => `<span class="badge badge-gray">⛺ ${name}</span>`).join("");
+    });
+    restoreTableFilter("items-table", "items-search");
+  }
+
+  async function saveGearGroup() {
+    const name = document.getElementById("new-group-name").value.trim();
+    const item_ids = [...document.querySelectorAll('input[name="group-item"]:checked')].map(input => Number(input.value));
+    const group_ids = [...document.querySelectorAll('input[name="group-group"]:checked')].map(input => Number(input.value));
+    if (!name) return msg("A group name is required.", true);
+    if (!item_ids.length && !group_ids.length) return msg("Select at least one item or sub-group.", true);
+    try {
+      const isEditing = Boolean(editingGroupId);
+      const path = isEditing ? `/items/groups/${editingGroupId}` : "/items/groups";
+      const method = isEditing ? "PUT" : "POST";
+      await apiFetch(path, { method, body: JSON.stringify({ name, item_ids, group_ids }) });
+      cancelGearGroupEdit();
+      await loadGearGroups();
+      msg(`✓ Gear group ${isEditing ? 'updated' : 'created'}.`);
+    } catch (e) { msg(e.message, true); }
+  }
+
+  function editGearGroup(id) {
+    const group = gearGroups.find(g => g.id === id);
+    if (!group) return;
+    editingGroupId = id;
+    document.getElementById("new-group-name").value = group.name;
+    renderGroupItemOptions();
+    document.querySelectorAll('input[name="group-item"]').forEach(input => {
+      input.checked = group.item_ids.includes(Number(input.value));
+    });
+    document.querySelectorAll('input[name="group-group"]').forEach(input => {
+      input.checked = (group.group_ids || []).includes(Number(input.value));
+    });
+    document.getElementById("save-group-btn").textContent = "Save Group";
+    document.getElementById("cancel-group-edit-btn").style.display = "inline-block";
+    document.getElementById("new-group-name").focus();
+  }
+
+  function cancelGearGroupEdit() {
+    editingGroupId = null;
+    document.getElementById("new-group-name").value = "";
+    renderGroupItemOptions();
+    document.getElementById("save-group-btn").textContent = "Create Group";
+    document.getElementById("cancel-group-edit-btn").style.display = "none";
+  }
+
+  async function deleteGearGroup(id) {
+    const group = gearGroups.find(g => g.id === id);
+    if (!confirm(`Delete ${group ? group.name : 'this gear group'}?`)) return;
+    try {
+      await apiFetch(`/items/groups/${id}`, { method: "DELETE" });
+      await loadGearGroups();
+      msg("✓ Gear group deleted.");
+    } catch (e) { msg(e.message, true); }
   }
 
   function openEdit(id) {
@@ -427,6 +661,7 @@
     document.getElementById("edit-tag").value = i.tag || '';
     document.getElementById("edit-name").value = i.name || '';
     document.getElementById("edit-desc").value = i.description || '';
+    document.getElementById("edit-image").value = '';
     document.getElementById("edit-category").value = i.category || '';
     document.getElementById("edit-locker").value = i.locker || '';
     document.getElementById("edit-mfg").value = i.manufactured_date || '';
@@ -455,6 +690,8 @@
     Object.keys(payload).forEach(k => payload[k] === null && delete payload[k]);
     try {
       await apiFetch(`/items/${editingId}`, { method: "PUT", body: JSON.stringify(payload) });
+      const image = document.getElementById("edit-image").files[0];
+      if (image) await uploadItemImage(editingId, image);
       msg("✓ Item updated.");
       closeEdit();
       await loadItems();
@@ -470,25 +707,44 @@
     const manufactured_date = document.getElementById("new-item-mfg").value.trim() || null;
     const condition_notes = document.getElementById("new-item-condition").value.trim() || null;
     const borrowed_by_email = document.getElementById("new-item-borrowed").value.trim() || null;
+    const image = document.getElementById("new-item-image").files[0];
     if (!name) return msg("Name is required.", true);
     try {
-      await apiFetch("/items", { method: "POST", body: JSON.stringify({
+      const item = await apiFetch("/items", { method: "POST", body: JSON.stringify({
         name, description, tag, category, locker,
         manufactured_date, condition_notes, borrowed_by_email,
         available: borrowed_by_email ? false : true,
       })});
+      if (image) await uploadItemImage(item.id, image);
       msg("✓ Item added.");
       // Clear form fields
       ["new-item-name","new-item-desc","new-item-mfg","new-item-condition","new-item-borrowed"]
         .forEach(id => document.getElementById(id).value = "");
       document.getElementById("new-item-category").value = "";
       document.getElementById("new-item-locker").value = "";
+      document.getElementById("new-item-image").value = "";
       await loadItems();
       // Update tag to next number without closing form
       const tags = allItems.map(i => parseInt(i.tag)).filter(n => !isNaN(n));
       const next = tags.length ? Math.max(...tags) + 1 : 1;
       document.getElementById("new-item-tag").value = String(next).padStart(3, "0");
       document.getElementById("new-item-name").focus();
+    } catch (e) { msg(e.message, true); }
+  }
+
+  async function uploadItemImage(itemId, image) {
+    const body = new FormData();
+    body.append("image", image);
+    await apiFetch(`/items/${itemId}/image`, { method: "POST", body });
+  }
+
+  async function handleItemImageUpload(itemId, input) {
+    const image = input.files[0];
+    if (!image) return;
+    try {
+      await uploadItemImage(itemId, image);
+      msg("✓ Gear image uploaded.");
+      await loadItems();
     } catch (e) { msg(e.message, true); }
   }
 
@@ -577,6 +833,7 @@
           </td>
         </tr>`;
     }).join("");
+    restoreTableFilter("loans-table", "loans-search");
   }
 
   function toggleExpand(id) {
@@ -602,8 +859,7 @@
   }
   async function checkOverdue() {
     const result = await apiFetch("/admin/check-overdue", { method: "POST" });
-    msg(result.locked_users.length ? `⚠️ Locked: ${result.locked_users.join(", ")}` : "✓ No overdue loans.");
-    await loadUsers();
+    msg(result.count ? `✓ Sent overdue reminders to: ${result.notified_users.join(", ")}` : "✓ No overdue loans.");
   }
 
   // --- LIGHTBOX ---
@@ -617,7 +873,7 @@
   function buildStockList() {
     const activeItems = allItems.filter(i => i.status === 'active');
     document.getElementById("stock-list").innerHTML = activeItems.map(item => `
-      <div style="display:flex;align-items:center;gap:1rem;padding:0.5rem 0;border-bottom:1px solid var(--border)">
+      <div class="stock-item" style="display:flex;align-items:center;gap:1rem;padding:0.5rem 0;border-bottom:1px solid var(--border)">
         <span class="badge badge-gray">#${item.tag ?? '—'}</span>
         <label style="flex:1;font-weight:600">${item.name}</label>
         <span class="badge ${item.available ? 'badge-green' : 'badge-red'}" style="min-width:80px">Expected: ${item.available ? 'In' : 'Out'}</span>
@@ -625,6 +881,7 @@
         <input type="text" placeholder="Notes" id="notes-${item.id}" style="width:140px;margin:0">
       </div>
     `).join("");
+    filterElements("stock-list", ".stock-item", document.getElementById("stock-search")?.value);
   }
 
   async function submitStock() {
@@ -702,6 +959,7 @@
         <td data-label="Details" style="font-size:0.8rem;color:var(--muted)">${friendlyAuditDetails(l.details)}</td>
       </tr>
     `).join("");
+    restoreTableFilter("audit-table", "audit-search");
   }
 
   init();
