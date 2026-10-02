@@ -67,8 +67,6 @@
       #stock-list > div { flex-wrap:wrap; gap:0.5rem; }
       #stock-list input[type=text] { width:100% !important; }
 
-      /* Locker code form */
-      #new-code-locker, #new-code, #new-verify-code { width:100% !important; }
     }
   </style>
 </head>
@@ -78,6 +76,20 @@
 <div class="lightbox" id="lightbox" onclick="closeLightbox()">
   <img id="lightbox-img" src="" alt="Photo">
   <button onclick="closeLightbox()">✕ Close</button>
+</div>
+
+<div class="modal-bg" id="user-modal" onclick="if(event.target===this)closeUserEdit()">
+  <div class="modal">
+    <h2>Edit User</h2>
+    <label>Name</label>
+    <input type="text" id="edit-user-name" placeholder="Full name">
+    <label>Email</label>
+    <input type="email" id="edit-user-email" placeholder="user@example.com">
+    <div class="modal-actions">
+      <button class="btn btn-primary" onclick="saveUserEdit()">Save</button>
+      <button class="btn btn-secondary" onclick="closeUserEdit()">Cancel</button>
+    </div>
+  </div>
 </div>
 
 <!-- Edit Modal -->
@@ -146,7 +158,6 @@
     <button class="tab" onclick="showTab('groups', this)">Gear Groups</button>
     <button class="tab" onclick="showTab('loans', this)">Loans <span id="pending-count" class="badge badge-yellow" style="display:none"></span></button>
     <button class="tab" onclick="showTab('stock', this)">Stock Check</button>
-    <button class="tab" onclick="showTab('locker', this)">Locker Codes</button>
     <button class="tab" onclick="showTab('audit', this)">Audit Log</button>
   </div>
 
@@ -162,6 +173,9 @@
     <div class="card" id="create-user-form" style="display:none;margin-bottom:1rem">
       <h2>Create User</h2>
       <label>Email</label>
+      <label>Name</label>
+      <input type="text" id="new-name" placeholder="Full name">
+      <label>Email</label>
       <input type="email" id="new-email" placeholder="user@tcd.ie">
       <button type="button" class="btn btn-primary" onclick="createUser()">Create & Send Credentials</button>
     </div>
@@ -169,7 +183,7 @@
       oninput="filterTableRows('users-table', this.value)">
     <div class="card">
       <table>
-        <thead><tr><th>Email</th><th>Approved</th><th>Auto-approve</th><th>Locked</th><th>Actions</th></tr></thead>
+        <thead><tr><th>Name</th><th>Email</th><th>Approved</th><th>Auto-approve</th><th>Locked</th><th>Actions</th></tr></thead>
         <tbody id="users-table"></tbody>
       </table>
     </div>
@@ -317,36 +331,6 @@
     </div>
   </div>
 
-  <!-- LOCKER CODES -->
-  <div class="section" id="tab-locker">
-    <h1>Locker Codes</h1>
-    <div class="stat-grid" id="locker-codes-grid"></div>
-    <div class="card" style="margin-top:1rem">
-      <h2>Update a Code</h2>
-      <label>Locker</label>
-      <select id="new-code-locker" style="width:220px">
-        <option value="outdoor">Outdoor Locker</option>
-        <option value="top">Top Locker</option>
-        <option value="bottom">Bottom Locker</option>
-        <option value="pad">Pad Stash</option>
-      </select>
-      <label>New Code</label>
-      <input type="text" id="new-code" placeholder="e.g. 4821" style="width:200px">
-      <button type="button" class="btn btn-primary" onclick="updateLockerCode()">Update Code</button>
-    </div>
-    <div class="card" style="margin-top:1rem;border:2px solid var(--accent)">
-      <h2>🔐 In-Person Verification Code</h2>
-      <p style="font-size:0.85rem;color:var(--muted);margin-bottom:0.75rem">
-        This is the single code members must enter when starting or returning a loan.
-        Post it physically on the locker board and update it here whenever you change it.
-      </p>
-      <label>Current code</label>
-      <div id="current-verify-code" style="font-size:1.4rem;font-weight:700;letter-spacing:0.15em;margin-bottom:0.75rem;color:var(--primary)">—</div>
-      <label>Set new verification code</label>
-      <input type="text" id="new-verify-code" placeholder="e.g. CLIMB24" style="width:220px;text-transform:uppercase;letter-spacing:0.1em">
-      <button type="button" class="btn btn-primary" onclick="updateVerificationCode()">Update Verification Code</button>
-    </div>
-  </div>
   <div class="section" id="tab-audit">
     <h1>Audit Log</h1>
     <input class="admin-search" id="audit-search" type="search" placeholder="Search audit log…" aria-label="Search audit log"
@@ -372,7 +356,6 @@
     await requireAdmin();
     await Promise.all([loadUsers(), loadItems(), loadLoans()]);
     await loadGearGroups();
-    loadLockerCodes();
     loadAudit();
   }
 
@@ -441,12 +424,14 @@
     allUsers = await apiFetch("/admin/users");
     document.getElementById("users-table").innerHTML = allUsers.map(u => `
       <tr>
+        <td data-label="Name">${u.name || '<span style="color:var(--muted)">—</span>'}</td>
         <td data-label="Email">${u.email}</td>
         <td data-label="Approved"><span class="badge ${u.is_approved ? 'badge-green' : 'badge-yellow'}">${u.is_approved ? 'Yes' : 'Pending'}</span></td>
         <td data-label="Auto-approve"><span class="badge ${u.auto_approve ? 'badge-green' : 'badge-gray'}">${u.auto_approve ? 'Auto' : 'Manual'}</span></td>
         <td data-label="Locked"><span class="badge ${u.is_locked ? 'badge-red' : 'badge-gray'}">${u.is_locked ? 'Locked' : 'OK'}</span></td>
         <td>
           ${!u.is_approved ? `<button class="btn btn-sm btn-success" onclick="approveUser(${u.id})">Approve</button>` : ''}
+          <button class="btn btn-sm btn-primary" onclick="openUserEdit(${u.id})">Edit</button>
           <button class="btn btn-sm ${u.auto_approve ? 'btn-secondary' : 'btn-primary'}" onclick="toggleAutoApprove(${u.id})">${u.auto_approve ? 'Set Manual' : 'Set Auto'}</button>
           <button class="btn btn-sm ${u.is_locked ? 'btn-success' : 'btn-danger'}" onclick="toggleLock(${u.id})">${u.is_locked ? 'Unlock' : 'Lock'}</button>
           <button class="btn btn-sm btn-secondary" onclick="resetPw(${u.id})">Reset PW</button>
@@ -458,11 +443,41 @@
 
   async function createUser() {
     const email = document.getElementById("new-email").value.trim();
+    const name = document.getElementById("new-name").value.trim();
     if (!email) return;
     try {
-      await apiFetch(`/admin/users?email=${encodeURIComponent(email)}`, { method: "POST" });
+      await apiFetch(`/admin/users?email=${encodeURIComponent(email)}&name=${encodeURIComponent(name)}`, { method: "POST" });
       msg(`✓ User created, credentials sent to ${email}`);
       toggleForm("create-user-form");
+      await loadUsers();
+    } catch (e) { msg(e.message, true); }
+  }
+
+  let editingUserId = null;
+  function openUserEdit(id) {
+    const user = allUsers.find(u => u.id === id);
+    if (!user) return;
+    editingUserId = id;
+    document.getElementById("edit-user-name").value = user.name || "";
+    document.getElementById("edit-user-email").value = user.email || "";
+    document.getElementById("user-modal").classList.add("open");
+  }
+  function closeUserEdit() {
+    editingUserId = null;
+    document.getElementById("user-modal").classList.remove("open");
+  }
+  async function saveUserEdit() {
+    if (!editingUserId) return;
+    try {
+      await apiFetch(`/admin/users/${editingUserId}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          name: document.getElementById("edit-user-name").value.trim() || null,
+          email: document.getElementById("edit-user-email").value.trim(),
+        }),
+      });
+      closeUserEdit();
+      msg("✓ User updated.");
       await loadUsers();
     } catch (e) { msg(e.message, true); }
   }
@@ -792,7 +807,6 @@
 
       const statusBadge = {
         pending_review: '<span class="badge pending-badge">Awaiting approval</span>',
-        pending_verification: '<span class="badge badge-yellow">Awaiting verification</span>',
         active: overdue ? '<span class="badge badge-red">Overdue</span>' : '<span class="badge badge-green">Active</span>',
         returned: '<span class="badge badge-gray">Returned</span>',
         denied: '<span class="badge badge-red">Denied</span>',
@@ -903,44 +917,6 @@
     try {
       const result = await apiFetch("/admin/stock-check", { method: "POST", body: JSON.stringify({ items }) });
       msg(`✓ Stock check done. ${result.discrepancies.length} discrepancy(s).${result.discrepancies.length ? ' Issues: ' + result.discrepancies.map(d => d.name).join(", ") : ''}`);
-    } catch (e) { msg(e.message, true); }
-  }
-
-  // --- LOCKER CODES ---
-  async function loadLockerCodes() {
-    const data = await apiFetch("/admin/locker-code");
-    try {
-      const vc = await apiFetch("/loans/admin/verification-code");
-      document.getElementById("current-verify-code").textContent = vc.code || "Not set";
-    } catch (_) {}
-    document.getElementById("locker-codes-grid").innerHTML = Object.entries(data).map(([locker, info]) => `
-      <div class="stat-card">
-        <div class="label">${LOCKER_LABELS[locker] || locker}</div>
-        <div class="num" style="font-size:1.6rem;letter-spacing:0.15em">${info.code || '—'}</div>
-        <div class="label">${info.updated_at ? new Date(info.updated_at).toLocaleDateString() : 'Not set'}</div>
-      </div>
-    `).join("");
-  }
-
-  async function updateLockerCode() {
-    const locker = document.getElementById("new-code-locker").value;
-    const code = document.getElementById("new-code").value.trim();
-    if (!code) return msg("Enter a code.", true);
-    try {
-      await apiFetch("/admin/locker-code", { method: "POST", body: JSON.stringify({ locker, code }) });
-      msg(`✓ ${LOCKER_LABELS[locker]} code updated.`);
-      loadLockerCodes();
-    } catch (e) { msg(e.message, true); }
-  }
-
-  async function updateVerificationCode() {
-    const code = document.getElementById("new-verify-code").value.trim().toUpperCase();
-    if (!code) return msg("Enter a code.", true);
-    try {
-      await apiFetch("/loans/admin/verification-code", { method: "POST", body: JSON.stringify({ code }) });
-      msg("✓ Verification code updated.");
-      document.getElementById("new-verify-code").value = "";
-      loadLockerCodes();
     } catch (e) { msg(e.message, true); }
   }
 

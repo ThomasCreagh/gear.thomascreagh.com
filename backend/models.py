@@ -10,6 +10,7 @@ class User(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String, unique=True, index=True, nullable=False)
+    name = Column(String)
     password_hash = Column(String, nullable=False)
     is_admin = Column(Boolean, default=False)
     is_approved = Column(Boolean, default=False)
@@ -68,9 +69,7 @@ class Loan(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     item_ids = Column(JSON, nullable=False, default=list)  # filled after locker opened
-    locker_codes = Column(JSON)        # {"outdoor": "1234", "top": "5678"} — revealed after verification
     lockers = Column(JSON)             # ["outdoor", "top"] — chosen at loan creation
-    locker_verified = Column(Boolean, default=False)  # True once verification code entered
     due_date = Column(DateTime)
     # For outdoor loans this may be a future booking date; T-wall loans start now.
     start_date = Column(DateTime)
@@ -109,24 +108,3 @@ class AuditLog(Base):
     timestamp = Column(DateTime, default=datetime.utcnow)
 
     user = relationship("User", back_populates="audit_logs")
-
-
-class LockerCode(Base):
-    __tablename__ = "locker_codes"
-
-    id = Column(Integer, primary_key=True, index=True)
-    locker = Column(String, nullable=False)
-    code = Column(String, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow)
-    updated_by = Column(Integer, ForeignKey("users.id"))
-
-
-class VerificationCode(Base):
-    """Single global in-person verification code set by admin.
-    Only the most recent row is used."""
-    __tablename__ = "verification_codes"
-
-    id = Column(Integer, primary_key=True, index=True)
-    code = Column(String, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow)
-    updated_by = Column(Integer, ForeignKey("users.id"))

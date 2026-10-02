@@ -10,7 +10,6 @@ from database import get_db
 import models
 import schemas
 from auth import get_approved_user, get_admin_user
-from mailer import send_loan_approved, send_loan_pending_admin
 from config import read_secret
 from services.overdue import send_overdue_reminders
 
@@ -28,28 +27,6 @@ def save_photo(file: UploadFile) -> str:
     with open(path, "wb") as f:
         shutil.copyfileobj(file.file, f)
     return path
-
-
-def get_locker_codes(db: Session, lockers: List[str]) -> dict:
-    codes = {}
-    for locker in lockers:
-        row = (
-            db.query(models.LockerCode)
-            .filter(models.LockerCode.locker == locker)
-            .order_by(models.LockerCode.id.desc())
-            .first()
-        )
-        codes[locker] = row.code if row else "0000"
-    return codes
-
-
-def get_verification_code(db: Session) -> str | None:
-    row = (
-        db.query(models.VerificationCode)
-        .order_by(models.VerificationCode.id.desc())
-        .first()
-    )
-    return row.code if row else None
 
 
 def expand_gear_group(group, db: Session, seen=None):
@@ -113,9 +90,7 @@ def create_loan(
     db_loan = models.Loan(
         user_id=current_user.id,
         item_ids=[],
-        locker_codes=None,
         lockers=loan.lockers,
-        locker_verified=False,
         due_date=due_date,
         status=initial_status,
         loan_type=loan_type,
@@ -130,57 +105,6 @@ def create_loan(
     db.commit()
     db.refresh(db_loan)
     return db_loan
-
-
-# ---------------------------------------------------------------------------
-# Verify — user enters the single in-person code; receives locker unlock codes.
-# Can be called for both borrow (pending_verification) and return (active).
-# ---------------------------------------------------------------------------
-@router.post("/{loan_id}/verify", response_model=schemas.LoanVerifyResponse)
-def verify_loan(
-    loan_id: int,
-    body: schemas.LoanVerifyRequest,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_approved_user),
-):
-    loan = db.query(models.Loan).filter(
-        models.Loan.id == loan_id,
-        models.Loan.user_id == current_user.id,
-    ).first()
-    if not loan:
-        raise HTTPException(status_code=404, detail="Loan not found")
-    if loan.status == "pending_review":
-        raise HTTPException(
-            status_code=403, detail="Awaiting Tom's approval before you can verify.")
-    if loan.status not in ("pending_verification", "active"):
-        raise HTTPException(
-            status_code=400, detail="This loan cannot be verified at this stage")
-
-    correct = get_verification_code(db)
-    if correct is None:
-        raise HTTPException(
-            status_code=503, detail="Verification code not configured. Contact Tom.")
-    if body.verification_code.strip() != correct.strip():
-        raise HTTPException(
-            status_code=403, detail="Incorrect verification code")
-
-    # Reveal locker codes and activate
-    locker_codes = get_locker_codes(db, loan.lockers or [])
-    loan.locker_codes = locker_codes
-    loan.locker_verified = True
-
-    if loan.status == "pending_verification":
-        loan.status = "active"
-        db.add(models.AuditLog(
-            user_id=current_user.id,
-            action="loan_verified",
-            details=f"Loan {loan_id} verified, codes issued for {
-                loan.lockers}",
-        ))
-
-    db.commit()
-    db.refresh(loan)
-    return schemas.LoanVerifyResponse(locker_codes=locker_codes, due_date=loan.due_date)
 
 
 # ---------------------------------------------------------------------------
@@ -376,8 +300,6 @@ def return_loan(
 
     loan.status = "returned"
     loan.returned_at = datetime.utcnow()
-    # Hide locker codes now that return is complete
-    loan.locker_codes = None
 
     for item_id in loan.item_ids:
         item = db.query(models.Item).filter(models.Item.id == item_id).first()
@@ -407,34 +329,6 @@ def my_loans(
         .order_by(models.Loan.created_at.desc())
         .all()
     )
-
-
-# ---------------------------------------------------------------------------
-# Admin: set the global verification code
-# ---------------------------------------------------------------------------
-@router.get("/admin/verification-code")
-def get_verification_code_admin(
-    db: Session = Depends(get_db),
-    admin: models.User = Depends(get_admin_user),
-):
-    code = get_verification_code(db)
-    return {"code": code or "Not set"}
-
-
-@router.post("/admin/verification-code")
-def set_verification_code(
-    body: schemas.VerificationCodeUpdate,
-    db: Session = Depends(get_db),
-    admin: models.User = Depends(get_admin_user),
-):
-    db.add(models.VerificationCode(code=body.code, updated_by=admin.id))
-    db.add(models.AuditLog(
-        user_id=admin.id,
-        action="verification_code_updated",
-        details="Global verification code changed",
-    ))
-    db.commit()
-    return {"message": "Verification code updated"}
 
 
 # ---------------------------------------------------------------------------
@@ -497,7 +391,6 @@ def admin_toggle_return(
     elif loan.status == "active":
         loan.status = "returned"
         loan.returned_at = datetime.utcnow()
-        loan.locker_codes = None
         for item_id in (loan.item_ids or []):
             item = db.query(models.Item).filter(models.Item.id == item_id).first()
             if item:
@@ -528,7 +421,6 @@ def run_twall_autoclose(db: Session, triggered_by: int | None = None) -> list[in
     for loan in loans:
         loan.status = "returned"
         loan.returned_at = datetime.utcnow()
-        loan.locker_codes = None
         for item_id in (loan.item_ids or []):
             item = db.query(models.Item).filter(models.Item.id == item_id).first()
             if item:

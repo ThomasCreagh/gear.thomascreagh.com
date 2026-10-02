@@ -24,6 +24,7 @@ models.Base.metadata.create_all(bind=engine)
 # running the optional SQL migration script first.
 with engine.begin() as connection:
     connection.execute(text("ALTER TABLE items ADD COLUMN IF NOT EXISTS image_path VARCHAR"))
+    connection.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS name VARCHAR"))
     connection.execute(text("ALTER TABLE loans ADD COLUMN IF NOT EXISTS start_date TIMESTAMP"))
     connection.execute(text("ALTER TABLE gear_groups ADD COLUMN IF NOT EXISTS group_ids JSONB NOT NULL DEFAULT '[]'::jsonb"))
     # Loans created before the trust-based flow used this intermediate state.

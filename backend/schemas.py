@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr
-from typing import Optional, List, Dict
+from typing import Optional, List
 from datetime import datetime
 from constants import CATEGORIES, CATEGORY_LABELS, LOCKERS, LOCKER_LABELS
 
@@ -21,6 +21,7 @@ class TokenResponse(BaseModel):
 class UserOut(BaseModel):
     id: int
     email: str
+    name: Optional[str] = None
     is_admin: bool
     is_approved: bool
     is_locked: bool
@@ -29,6 +30,11 @@ class UserOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class UserUpdate(BaseModel):
+    name: Optional[str] = None
+    email: Optional[EmailStr] = None
 
 # Items
 
@@ -115,15 +121,6 @@ class LoanCreate(BaseModel):
     loan_type: Optional[str] = "standard"  # standard | twall
 
 
-class LoanVerifyRequest(BaseModel):
-    verification_code: str
-
-
-class LoanVerifyResponse(BaseModel):
-    locker_codes: Dict[str, str]   # {"top": "1234", "bottom": "5678", ...}
-    due_date: datetime
-
-
 class LoanUpdate(BaseModel):
     item_ids: Optional[List[int]] = None
     due_date: Optional[datetime] = None
@@ -133,9 +130,7 @@ class LoanOut(BaseModel):
     id: int
     user_id: int
     item_ids: List[int]
-    locker_codes: Optional[Dict]
     lockers: Optional[List[str]]
-    locker_verified: bool = False
     due_date: Optional[datetime]
     start_date: Optional[datetime] = None
     status: str
@@ -158,12 +153,3 @@ class StockCheckItem(BaseModel):
 
 class StockCheckRequest(BaseModel):
     items: List[StockCheckItem]
-
-
-class LockerCodeUpdate(BaseModel):
-    locker: str
-    code: str
-
-
-class VerificationCodeUpdate(BaseModel):
-    code: str

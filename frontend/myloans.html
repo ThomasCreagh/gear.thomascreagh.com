@@ -193,7 +193,7 @@
       </div>
       <p style="font-size:0.8rem;color:var(--muted);margin-bottom:1rem">T-wall loans are 1 day and auto-close after 24 hours.</p>
       <div style="display:flex;gap:0.75rem">
-        <button class="btn btn-primary" onclick="modalNextToVerify()">Next →</button>
+        <button class="btn btn-primary" onclick="modalNextToLoan()">Next →</button>
         <button class="btn btn-secondary" onclick="backToLocation()">← Back</button>
       </div>
       <div class="alert alert-error" id="modal-err-lockers" style="margin-top:0.75rem"></div>
@@ -225,7 +225,7 @@
         </div>
       </div>
       <div style="display:flex;gap:0.75rem;margin-top:0.5rem">
-        <button class="btn btn-primary" onclick="modalNextToVerify()">Next →</button>
+        <button class="btn btn-primary" onclick="modalNextToLoan()">Next →</button>
         <button class="btn btn-secondary" onclick="backToLocation()">← Back</button>
       </div>
       <div class="alert alert-error" id="modal-err-lockers-outside" style="margin-top:0.75rem"></div>
@@ -287,7 +287,7 @@
   let allLoans = [];
   let gearGroups = [];
   let editState  = {};   // loanId → { item_ids }
-  let pendingNewLoanId    = null;   // loan just created, awaiting verify
+  let pendingNewLoanId    = null;   // loan just created, awaiting modal close
 
   // ── Init ──────────────────────────────────────────────────────────────────
   async function init() {
@@ -388,10 +388,9 @@
     if (isPendingReview)      { badgeClass = "badge-yellow"; badgeText = "Awaiting approval"; }
     else if (overdue)         { badgeClass = "badge-red";    badgeText = "Overdue"; }
 
-    // Locker codes (only shown once verified)
     const codesHtml = "";
 
-    // Pending review / verify banner
+    // Pending manual review banner
     const pendingBanner = isPendingReview
       ? `<div class="step-block">
            <div class="step-label">Step 1 — Contact Tom</div>
@@ -571,7 +570,7 @@
     }
   }
 
-  async function modalNextToVerify() {
+  async function modalNextToLoan() {
     const isTwall = currentLoanMode === "inside";
     let selected, days, start_date, errEl;
 

@@ -33,20 +33,6 @@ def send_account_created(email: str, password: str):
     """)
 
 
-def send_loan_approved(email: str, locker_codes: dict, due_date: str, items: list):
-    codes_html = "".join(
-        f"<li><b>{k.title()}:</b> {v}</li>" for k, v in locker_codes.items())
-    items_html = "".join(f"<li>{i}</li>" for i in items)
-    send_email(email, "Borrow Request Approved", f"""
-        <p>Your borrow request has been approved.</p>
-        <p><b>Due date:</b> {due_date}</p>
-        <p><b>Locker codes:</b><ul>{codes_html}</ul></p>
-        <p><b>Items:</b><ul>{items_html}</ul></p>
-        <p>Please photograph each locker after collecting your gear.</p>
-        <p><b>You are responsible for all borrowed gear. Any damage or loss must be reported to Tom immediately.</b></p>
-    """)
-
-
 def send_loan_pending_admin(user_email: str, items: list):
     items_html = "".join(f"<li>{i}</li>" for i in items)
     send_email(ADMIN_EMAIL, "New Gear Borrow Request", f"""

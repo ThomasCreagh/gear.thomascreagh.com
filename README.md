@@ -8,11 +8,9 @@ A web-based gear borrowing and return system for [gear.thomascreagh.com](http://
 
 - User login with JWT authentication
 - Browse and request available gear
-- Locker code issued on approved borrow request
 - Photo confirmation required on borrow and return
 - Automatic audit logging of all actions
 - Admin dashboard for Tom (approve requests, manage users, stock checks)
-- Weekly locker code rotation
 - Email notifications via self-hosted mail server (gear@thomascreagh.com)
 - Password reset handled in person with Tom
 
@@ -65,7 +63,7 @@ gear-renting/
 
 - `users` — id, email, password_hash, is_admin, is_approved
 - `items` — id, name, description, available
-- `loans` — id, user_id, item_ids, locker_code, due_date, returned, created_at
+- `loans` — id, user_id, item_ids, booking dates, due_date, status, created_at
 - `audit_log` — id, user_id, action, timestamp
 
 ---
@@ -78,16 +76,14 @@ gear-renting/
 3. Tom approves → user can browse available gear
 4. User selects items and number of days (max N days)
 5. System logs the request and notifies Tom if required
-6. User receives locker code and goes to physical locker
-7. User must take a photo of the locker after collecting gear
-8. All item availability updates in real time
+6. User takes the gear from the physical locker and logs each item
+7. All item availability updates in real time
 
 ### Returning gear
 1. User logs in and selects items they are returning
 2. System checks all items are accounted for — flags discrepancies immediately
-3. User receives locker code to return gear
-4. User takes a photo of the locker after returning
-5. System logs exact timestamp and who returned what
+3. User takes a photo of each locker after returning the gear
+4. System logs exact timestamp and who returned what
 
 ### Account creation
 1. User goes to Tom in person with TCD card and email address
@@ -96,10 +92,9 @@ gear-renting/
 
 ### Password reset
 - User requests reset in person with Tom
-- Tom follows same verification as account creation
+- Tom handles password resets in person after confirming the member's identity
 
 ### What Tom does weekly
-- Changes locker code
 - Updates public code on the locker
 - Does a stock check
 
@@ -180,7 +175,4 @@ python-dotenv
 
 - Never commit `.env` to version control — add it to `.gitignore`
 - Rotate `SECRET_KEY` if compromised (invalidates all sessions)
-- Locker codes are rotated weekly by Tom
-- All logins and locker code access are audit logged
 - Users who fail to return items on time are locked out until resolved
-

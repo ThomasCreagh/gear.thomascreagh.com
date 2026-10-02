@@ -19,17 +19,36 @@ def list_users(db: Session = Depends(get_db), admin: models.User = Depends(get_a
 
 
 @router.post("/users")
-def create_user(email: str, db: Session = Depends(get_db), admin: models.User = Depends(get_admin_user)):
+def create_user(email: str, name: str = "", db: Session = Depends(get_db), admin: models.User = Depends(get_admin_user)):
     email = normalise_email(email)
     if find_user_by_email(db, email):
         raise HTTPException(status_code=400, detail="Email already exists")
     temp_password = secrets.token_urlsafe(10)
-    user = models.User(email=email, password_hash=hash_password(temp_password), is_approved=True)
+    user = models.User(email=email, name=name.strip() or None, password_hash=hash_password(temp_password), is_approved=True)
     db.add(user)
     db.add(models.AuditLog(user_id=admin.id, action="user_created", details=f"Created: {email}"))
     db.commit()
     send_account_created(email, temp_password)
     return {"message": "User created", "email": email}
+
+
+@router.put("/users/{user_id}", response_model=schemas.UserOut)
+def update_user(user_id: int, update: schemas.UserUpdate, db: Session = Depends(get_db), admin: models.User = Depends(get_admin_user)):
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if update.email is not None:
+        email = normalise_email(str(update.email))
+        existing = find_user_by_email(db, email)
+        if existing and existing.id != user_id:
+            raise HTTPException(status_code=400, detail="Email already exists")
+        user.email = email
+    if update.name is not None:
+        user.name = update.name.strip() or None
+    db.add(models.AuditLog(user_id=admin.id, action="user_updated", details=f"User {user_id}"))
+    db.commit()
+    db.refresh(user)
+    return user
 
 
 @router.post("/users/{user_id}/approve")
@@ -95,7 +114,6 @@ def list_loans(active_only: bool = False, db: Session = Depends(get_db), admin: 
             "item_ids": loan.item_ids,
             "item_names": [i.name for i in items if i],
             "lockers": loan.lockers,
-            "locker_codes": loan.locker_codes,
             "due_date": loan.due_date,
             "start_date": loan.start_date,
             "status": loan.status,
@@ -128,25 +146,6 @@ def stock_check(check: schemas.StockCheckRequest, db: Session = Depends(get_db),
     db.add(models.AuditLog(user_id=admin.id, action="stock_check", details=f"Checked {len(check.items)}, {len(discrepancies)} discrepancies"))
     db.commit()
     return {"checked": len(check.items), "discrepancies": discrepancies}
-
-
-@router.post("/locker-code")
-def update_locker_code(update: schemas.LockerCodeUpdate, db: Session = Depends(get_db), admin: models.User = Depends(get_admin_user)):
-    if update.locker not in models.LOCKERS:
-        raise HTTPException(status_code=400, detail="Invalid locker")
-    db.add(models.LockerCode(locker=update.locker, code=update.code, updated_by=admin.id))
-    db.add(models.AuditLog(user_id=admin.id, action="locker_code_updated", details=f"Locker: {update.locker}"))
-    db.commit()
-    return {"message": f"Code updated for {update.locker}"}
-
-
-@router.get("/locker-code")
-def get_locker_codes(db: Session = Depends(get_db), admin: models.User = Depends(get_admin_user)):
-    result = {}
-    for locker in models.LOCKERS:
-        row = db.query(models.LockerCode).filter(models.LockerCode.locker == locker).order_by(models.LockerCode.id.desc()).first()
-        result[locker] = {"code": row.code if row else None, "updated_at": row.updated_at if row else None}
-    return result
 
 
 @router.get("/audit-log")
