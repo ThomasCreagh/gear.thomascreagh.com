@@ -131,6 +131,7 @@ class LoanOut(BaseModel):
     user_id: int
     item_ids: List[int]
     lockers: Optional[List[str]]
+    door_code: Optional[str] = None
     due_date: Optional[datetime]
     start_date: Optional[datetime] = None
     status: str
@@ -143,16 +144,6 @@ class LoanOut(BaseModel):
         from_attributes = True
 
 # Admin
-
-
-class StockCheckItem(BaseModel):
-    item_id: int
-    present: bool
-    notes: Optional[str] = None
-
-
-class StockCheckRequest(BaseModel):
-    items: List[StockCheckItem]
 
 
 class LockerCodeUpdate(BaseModel):

@@ -16,6 +16,7 @@ from services.overdue import send_overdue_reminders
 router = APIRouter(prefix="/loans", tags=["loans"])
 
 MAX_LOAN_DAYS = int(os.getenv("MAX_LOAN_DAYS", 14))
+TWALL_DOOR_LOCKER = "twall_door"
 UPLOAD_DIR = read_secret("UPLOAD_DIR", "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
@@ -86,6 +87,9 @@ def create_loan(
             raise HTTPException(status_code=400, detail="Outdoor bookings cannot start in the past")
     due_date = start_date + timedelta(days=days)
     initial_status = "active" if current_user.auto_approve else "pending_review"
+    door_row = db.query(models.LockerCode).filter(
+        models.LockerCode.locker == TWALL_DOOR_LOCKER
+    ).order_by(models.LockerCode.id.desc()).first()
 
     db_loan = models.Loan(
         user_id=current_user.id,
@@ -95,6 +99,7 @@ def create_loan(
         status=initial_status,
         loan_type=loan_type,
         start_date=start_date,
+        door_code=door_row.code if door_row else None,
     )
     db.add(db_loan)
     db.add(models.AuditLog(

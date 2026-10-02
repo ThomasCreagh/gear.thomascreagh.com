@@ -1,6 +1,6 @@
 # Gear Renting Website
 
-A web-based gear borrowing and return system for [gear.thomascreagh.com](http://gear.thomascreagh.com). Users can browse available gear, request to borrow items, and return them via a physical locker system. Tom (admin) manages user accounts, approves access, and performs weekly stock checks.
+A web-based gear borrowing and return system for [gear.thomascreagh.com](http://gear.thomascreagh.com). Users can browse available gear, request to borrow items, and return them via a physical locker system. Tom (admin) manages user accounts, approves access, and manages the gear catalogue.
 
 ---
 
@@ -10,7 +10,7 @@ A web-based gear borrowing and return system for [gear.thomascreagh.com](http://
 - Browse and request available gear
 - Photo confirmation required on borrow and return
 - Automatic audit logging of all actions
-- Admin dashboard for Tom (approve requests, manage users, stock checks)
+- Admin dashboard for Tom (approve requests, manage users, and manage gear)
 - Email notifications via self-hosted mail server (gear@thomascreagh.com)
 - Password reset handled in person with Tom
 
@@ -96,7 +96,6 @@ gear-renting/
 
 ### What Tom does weekly
 - Updates public code on the locker
-- Does a stock check
 
 ---
 
@@ -111,7 +110,6 @@ gear-renting/
 | GET | `/admin/users` | List all users (admin) |
 | POST | `/admin/users/{id}/approve` | Approve user access (admin) |
 | GET | `/admin/loans` | View all active loans (admin) |
-| POST | `/admin/stock-check` | Log weekly stock check (admin) |
 
 ---
 

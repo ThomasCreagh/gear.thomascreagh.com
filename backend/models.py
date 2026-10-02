@@ -43,7 +43,7 @@ class Item(Base):
     status = Column(String, default="active")
     # free text: "2021", "2010 or earlier"
     manufactured_date = Column(String)
-    # from stock check: "good", "janky wire"
+    # free-text condition notes: "good", "janky wire"
     condition_notes = Column(String)
     # email if currently on loan outside system
     borrowed_by_email = Column(String)
@@ -70,6 +70,7 @@ class Loan(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     item_ids = Column(JSON, nullable=False, default=list)  # filled after locker opened
     lockers = Column(JSON)             # ["outdoor", "top"] — chosen at loan creation
+    door_code = Column(String)         # Trinity Wall door code issued with every loan
     due_date = Column(DateTime)
     # For outdoor loans this may be a future booking date; T-wall loans start now.
     start_date = Column(DateTime)

@@ -107,7 +107,7 @@ def write_legend(wb):
         ("status", "active | retired | missing"),
         ("available", "TRUE = in locker; FALSE = on loan or unavailable"),
         ("manufactured_date", "year or date manufactured/purchased"),
-        ("condition_notes", "free-text condition from stock check"),
+        ("condition_notes", "free-text condition notes"),
         ("borrowed_by", "email of person currently borrowing; blank if in locker"),
         ("", ""),
         ("LOCKER VALUES", "DB column: items.locker"),

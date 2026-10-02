@@ -137,7 +137,7 @@ def list_loans(active_only: bool = False, db: Session = Depends(get_db), admin: 
 
 @router.post("/locker-code")
 def update_locker_code(update: schemas.LockerCodeUpdate, db: Session = Depends(get_db), admin: models.User = Depends(get_admin_user)):
-    if update.locker not in models.LOCKERS:
+    if update.locker not in (*models.LOCKERS, "twall_door"):
         raise HTTPException(status_code=400, detail="Invalid locker")
     code = update.code.strip()
     if not code:
@@ -145,30 +145,17 @@ def update_locker_code(update: schemas.LockerCodeUpdate, db: Session = Depends(g
     db.add(models.LockerCode(locker=update.locker, code=code, updated_by=admin.id))
     db.add(models.AuditLog(user_id=admin.id, action="locker_code_updated", details=f"Locker: {update.locker}"))
     db.commit()
-    return {"message": f"{models.LOCKER_LABELS[update.locker]} code updated"}
+    label = "Trinity Wall Door" if update.locker == "twall_door" else models.LOCKER_LABELS[update.locker]
+    return {"message": f"{label} code updated"}
 
 
 @router.get("/locker-code")
 def get_locker_codes(db: Session = Depends(get_db), admin: models.User = Depends(get_admin_user)):
     result = {}
-    for locker in models.LOCKERS:
+    for locker in (*models.LOCKERS, "twall_door"):
         row = db.query(models.LockerCode).filter(models.LockerCode.locker == locker).order_by(models.LockerCode.id.desc()).first()
         result[locker] = {"code": row.code if row else None, "updated_at": row.updated_at if row else None}
     return result
-
-
-@router.post("/stock-check")
-def stock_check(check: schemas.StockCheckRequest, db: Session = Depends(get_db), admin: models.User = Depends(get_admin_user)):
-    discrepancies = []
-    for entry in check.items:
-        item = db.query(models.Item).filter(models.Item.id == entry.item_id).first()
-        if not item:
-            continue
-        if item.available != entry.present:
-            discrepancies.append({"item_id": entry.item_id, "name": item.name, "expected": item.available, "found": entry.present, "notes": entry.notes})
-    db.add(models.AuditLog(user_id=admin.id, action="stock_check", details=f"Checked {len(check.items)}, {len(discrepancies)} discrepancies"))
-    db.commit()
-    return {"checked": len(check.items), "discrepancies": discrepancies}
 
 
 @router.get("/audit-log")
