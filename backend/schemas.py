@@ -153,3 +153,8 @@ class StockCheckItem(BaseModel):
 
 class StockCheckRequest(BaseModel):
     items: List[StockCheckItem]
+
+
+class LockerCodeUpdate(BaseModel):
+    locker: str
+    code: str

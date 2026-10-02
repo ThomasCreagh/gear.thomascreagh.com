@@ -108,3 +108,14 @@ class AuditLog(Base):
     timestamp = Column(DateTime, default=datetime.utcnow)
 
     user = relationship("User", back_populates="audit_logs")
+
+
+class LockerCode(Base):
+    """Current/history of physical locker combinations for admin reference."""
+    __tablename__ = "locker_codes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    locker = Column(String, nullable=False)
+    code = Column(String, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow)
+    updated_by = Column(Integer, ForeignKey("users.id"))

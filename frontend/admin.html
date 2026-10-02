@@ -158,6 +158,7 @@
     <button class="tab" onclick="showTab('groups', this)">Gear Groups</button>
     <button class="tab" onclick="showTab('loans', this)">Loans <span id="pending-count" class="badge badge-yellow" style="display:none"></span></button>
     <button class="tab" onclick="showTab('stock', this)">Stock Check</button>
+    <button class="tab" onclick="showTab('locker', this)">Locker Codes</button>
     <button class="tab" onclick="showTab('audit', this)">Audit Log</button>
   </div>
 
@@ -331,6 +332,26 @@
     </div>
   </div>
 
+  <!-- LOCKER CODES -->
+  <div class="section" id="tab-locker">
+    <h1>Locker Codes</h1>
+    <p style="color:var(--muted);font-size:0.9rem">Update the physical combination for each locker. These codes are for Tom’s locker management only and are not shown to borrowers.</p>
+    <div class="stat-grid" id="locker-codes-grid"></div>
+    <div class="card" style="margin-top:1rem">
+      <h2>Update a Locker Code</h2>
+      <label>Locker</label>
+      <select id="new-code-locker" style="width:220px">
+        <option value="outdoor">Outdoor Locker</option>
+        <option value="top">Top Locker</option>
+        <option value="bottom">Bottom Locker</option>
+        <option value="pad">Pad Stash</option>
+      </select>
+      <label>New combination</label>
+      <input type="text" id="new-code" placeholder="e.g. 4821" style="width:200px">
+      <button type="button" class="btn btn-primary" onclick="updateLockerCode()">Update Code</button>
+    </div>
+  </div>
+
   <div class="section" id="tab-audit">
     <h1>Audit Log</h1>
     <input class="admin-search" id="audit-search" type="search" placeholder="Search audit log…" aria-label="Search audit log"
@@ -356,6 +377,7 @@
     await requireAdmin();
     await Promise.all([loadUsers(), loadItems(), loadLoans()]);
     await loadGearGroups();
+    await loadLockerCodes();
     loadAudit();
   }
 
@@ -469,8 +491,8 @@
   async function saveUserEdit() {
     if (!editingUserId) return;
     try {
-      await apiFetch(`/admin/users/${editingUserId}`, {
-        method: "PUT",
+      await apiFetch(`/admin/users/${editingUserId}/edit`, {
+        method: "POST",
         body: JSON.stringify({
           name: document.getElementById("edit-user-name").value.trim() || null,
           email: document.getElementById("edit-user-email").value.trim(),
@@ -883,6 +905,29 @@
   async function checkOverdue() {
     const result = await apiFetch("/admin/check-overdue", { method: "POST" });
     msg(result.count ? `✓ Sent overdue reminders to: ${result.notified_users.join(", ")}` : "✓ No overdue loans.");
+  }
+
+  async function loadLockerCodes() {
+    const data = await apiFetch("/admin/locker-code");
+    document.getElementById("locker-codes-grid").innerHTML = Object.entries(data).map(([locker, info]) => `
+      <div class="stat-card">
+        <div class="label">${LOCKER_LABELS[locker] || locker}</div>
+        <div class="num" style="font-size:1.6rem;letter-spacing:0.15em">${info.code || '—'}</div>
+        <div class="label">${info.updated_at ? new Date(info.updated_at).toLocaleDateString() : 'Not set'}</div>
+      </div>
+    `).join("");
+  }
+
+  async function updateLockerCode() {
+    const locker = document.getElementById("new-code-locker").value;
+    const code = document.getElementById("new-code").value.trim();
+    if (!code) return msg("Enter a code.", true);
+    try {
+      await apiFetch("/admin/locker-code", { method: "POST", body: JSON.stringify({ locker, code }) });
+      document.getElementById("new-code").value = "";
+      msg(`✓ ${LOCKER_LABELS[locker]} code updated.`);
+      await loadLockerCodes();
+    } catch (e) { msg(e.message, true); }
   }
 
   // --- LIGHTBOX ---

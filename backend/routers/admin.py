@@ -32,6 +32,7 @@ def create_user(email: str, name: str = "", db: Session = Depends(get_db), admin
     return {"message": "User created", "email": email}
 
 
+@router.post("/users/{user_id}/edit", response_model=schemas.UserOut)
 @router.put("/users/{user_id}", response_model=schemas.UserOut)
 def update_user(user_id: int, update: schemas.UserUpdate, db: Session = Depends(get_db), admin: models.User = Depends(get_admin_user)):
     user = db.query(models.User).filter(models.User.id == user_id).first()
@@ -131,6 +132,28 @@ def list_loans(active_only: bool = False, db: Session = Depends(get_db), admin: 
                 for p in loan.photos
             ],
         })
+    return result
+
+
+@router.post("/locker-code")
+def update_locker_code(update: schemas.LockerCodeUpdate, db: Session = Depends(get_db), admin: models.User = Depends(get_admin_user)):
+    if update.locker not in models.LOCKERS:
+        raise HTTPException(status_code=400, detail="Invalid locker")
+    code = update.code.strip()
+    if not code:
+        raise HTTPException(status_code=400, detail="A locker code is required")
+    db.add(models.LockerCode(locker=update.locker, code=code, updated_by=admin.id))
+    db.add(models.AuditLog(user_id=admin.id, action="locker_code_updated", details=f"Locker: {update.locker}"))
+    db.commit()
+    return {"message": f"{models.LOCKER_LABELS[update.locker]} code updated"}
+
+
+@router.get("/locker-code")
+def get_locker_codes(db: Session = Depends(get_db), admin: models.User = Depends(get_admin_user)):
+    result = {}
+    for locker in models.LOCKERS:
+        row = db.query(models.LockerCode).filter(models.LockerCode.locker == locker).order_by(models.LockerCode.id.desc()).first()
+        result[locker] = {"code": row.code if row else None, "updated_at": row.updated_at if row else None}
     return result
 
 
