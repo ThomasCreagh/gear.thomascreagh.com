@@ -342,7 +342,13 @@
     try {
       const me = await getMe();
       if (me.is_approved) document.getElementById("start-loan-btn").style.display = "inline-block";
-      [allLoans, allItems, gearGroups] = await Promise.all([apiFetch("/loans/my"), apiFetch("/items"), apiFetch("/items/groups")]);
+      // Older deployments may not have the optional groups route yet; loans
+      // should still load while that backend is being restarted/migrated.
+      [allLoans, allItems, gearGroups] = await Promise.all([
+        apiFetch("/loans/my"),
+        apiFetch("/items"),
+        apiFetch("/items/groups").catch(() => []),
+      ]);
       render();
     } catch (e) { showError(document.getElementById("error"), e.message); }
   }
