@@ -135,7 +135,7 @@
             <div class="grid">
               ${catItems.map(item => `
                 <div class="item-card">
-                  ${item.image_path ? `<img class="gear-photo" src="/uploads/${item.image_path}" alt="${item.name}">` : ''}
+                  ${item.image_path ? `<img class="gear-photo" src="/uploads/${item.image_path}" alt="${item.name}" loading="lazy" decoding="async" fetchpriority="low">` : ''}
                   <div style="display:flex;justify-content:space-between;align-items:center">
                     <h3>${item.name}</h3>
                     <span class="badge ${item.available ? 'badge-green' : 'badge-red'}">${item.available ? 'Available' : 'Out'}</span>
