@@ -174,3 +174,58 @@ python-dotenv
 - Never commit `.env` to version control — add it to `.gitignore`
 - Rotate `SECRET_KEY` if compromised (invalidates all sessions)
 - Users who fail to return items on time are locked out until resolved
+
+## Performance and verification
+
+The server still installs dependencies with `pip install -r backend/requirements.txt`.
+No frontend build step, Node runtime, or uv installation is required to serve the app.
+
+Loan actions now update the page from the saved loan returned by the API instead
+of refetching loans, items, and groups after every action. Opening My Loans starts
+its independent requests together. Item availability on the page is updated for
+the affected loan; the backend still validates availability before accepting gear.
+Changes made by other users are fetched on page reload, rather than through live
+inventory subscriptions. Existing photo/return response fields are preserved, and
+the frontend falls back to refetching when talking to an older backend.
+
+Backend query changes:
+
+- My Loans fetches photos in batches instead of separately for every loan.
+- The admin loan list joins borrowers and batches photos and item lookups.
+- Item edits fetch changed items together; returns and automatic closures update
+  availability in batches. Additions lock item rows on PostgreSQL while validating.
+- Locker code lookup selects the latest codes together, including the door code.
+- Nested gear groups and overdue reminders batch their related record lookups.
+- Catalogue responses use gzip when the client supports it. Uploaded photos and
+  responses containing locker codes or credentials are not compressed by the app.
+
+With a local fixture of 12 loans, list queries (excluding authentication) fell from
+13 to 2 for My Loans and from 16 to 3 for the admin list. Returning 20 items uses
+one item UPDATE. These are query-count checks, not production latency benchmarks;
+SQLAlchemy may split very large photo batches into multiple queries.
+
+Responses include `Server-Timing: app;dur=...` in milliseconds. Compare this header
+in the browser's Network panel with the overall request duration after restarting
+the backend. It measures time inside the application up to response headers,
+including request parsing and database work; it excludes subsequent response
+transfer and time spent outside the app, such as proxy queues and network travel.
+
+To run regression checks in a Python environment with the requirements installed:
+
+```bash
+python -m unittest discover -s backend/tests -v
+```
+
+Tests use an isolated SQLite database and temporary uploads, with no real email
+delivery. PostgreSQL locking behaviour and live server latency need deployment
+verification. Optional frontend request/state checks use Node's built-in runner:
+
+```bash
+node --test frontend/tests/loans.test.cjs
+```
+
+Account creation, password resets, and overdue reminders still send email before
+responding. Those actions can be delayed by SMTP; moving them to a durable job queue
+would be a separate change to email delivery behaviour. Loan actions do not send
+email. Database indexes and hosting/network latency should be investigated against
+the deployed database if server timings remain high.

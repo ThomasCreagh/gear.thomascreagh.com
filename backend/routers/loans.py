@@ -1,6 +1,6 @@
 import os
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 from typing import List
 from datetime import datetime, timedelta
 import shutil
@@ -12,6 +12,7 @@ import schemas
 from auth import get_approved_user, get_admin_user
 from config import read_secret
 from services.overdue import send_overdue_reminders
+from services.inventory import latest_locker_codes, set_items_available
 
 router = APIRouter(prefix="/loans", tags=["loans"])
 
@@ -31,26 +32,22 @@ def save_photo(file: UploadFile) -> str:
 
 
 def get_locker_codes(db: Session, lockers: List[str]) -> dict:
-    codes = {}
-    for locker in lockers:
-        row = db.query(models.LockerCode).filter(
-            models.LockerCode.locker == locker
-        ).order_by(models.LockerCode.id.desc()).first()
-        if row:
-            codes[locker] = row.code
-    return codes
+    return {locker: row.code for locker, row in latest_locker_codes(db, lockers).items()}
 
 
-def expand_gear_group(group, db: Session, seen=None):
+def expand_gear_group(group, db: Session, seen=None, groups_by_id=None):
+    # Load the small group catalogue once, rather than querying each child.
+    if groups_by_id is None:
+        groups_by_id = {g.id: g for g in db.query(models.GearGroup).all()}
     seen = seen or set()
     if group.id in seen:
         raise HTTPException(status_code=400, detail="Circular gear group nesting detected")
     seen.add(group.id)
     ids = list(group.item_ids or [])
     for child_id in (group.group_ids or []):
-        child = db.get(models.GearGroup, child_id)
+        child = groups_by_id.get(child_id)
         if child:
-            ids.extend(expand_gear_group(child, db, seen.copy()))
+            ids.extend(expand_gear_group(child, db, seen.copy(), groups_by_id))
     return list(dict.fromkeys(ids))
 
 
@@ -98,10 +95,8 @@ def create_loan(
             raise HTTPException(status_code=400, detail="Outdoor bookings cannot start in the past")
     due_date = start_date + timedelta(days=days)
     initial_status = "active" if current_user.auto_approve else "pending_review"
-    door_row = db.query(models.LockerCode).filter(
-        models.LockerCode.locker == TWALL_DOOR_LOCKER
-    ).order_by(models.LockerCode.id.desc()).first()
-    locker_codes = get_locker_codes(db, loan.lockers)
+    codes = get_locker_codes(db, [*loan.lockers, TWALL_DOOR_LOCKER])
+    locker_codes = {locker: codes[locker] for locker in loan.lockers if locker in codes}
 
     db_loan = models.Loan(
         user_id=current_user.id,
@@ -112,7 +107,7 @@ def create_loan(
         loan_type=loan_type,
         start_date=start_date,
         locker_codes=locker_codes or None,
-        door_code=door_row.code if door_row else None,
+        door_code=codes.get(TWALL_DOOR_LOCKER),
     )
     db.add(db_loan)
     db.add(models.AuditLog(
@@ -155,22 +150,20 @@ def update_loan(
         removed_ids = set(loan.item_ids) - set(update.item_ids)
         added_ids = set(update.item_ids) - set(loan.item_ids)
 
-        for item_id in removed_ids:
-            item = db.query(models.Item).filter(
-                models.Item.id == item_id).first()
-            if item:
-                item.available = True
-
+        # Validate the complete addition before changing availability. Lock in ID
+        # order so concurrent borrowers cannot both take the same available item.
+        changed_ids = removed_ids | added_ids
+        items_by_id = {
+            item.id: item for item in db.query(models.Item).filter(
+                models.Item.id.in_(changed_ids)
+            ).order_by(models.Item.id).with_for_update().all()
+        } if changed_ids else {}
         for item_id in added_ids:
-            item = db.query(models.Item).filter(
-                models.Item.id == item_id,
-                models.Item.available == True,
-                models.Item.status == "active",
-            ).first()
-            if not item:
-                raise HTTPException(status_code=400, detail=f"Item {
-                                    item_id} not available")
-            item.available = False
+            item = items_by_id.get(item_id)
+            if not item or not item.available or item.status != "active":
+                raise HTTPException(status_code=400, detail=f"Item {item_id} not available")
+        for item_id, item in items_by_id.items():
+            item.available = item_id in removed_ids
 
         loan.item_ids = update.item_ids
         changes.append(f"item_ids={update.item_ids}")
@@ -208,7 +201,7 @@ def add_gear_group_to_loan(
     expanded_ids = expand_gear_group(group, db)
     if not expanded_ids:
         raise HTTPException(status_code=404, detail="Gear group has no items")
-    items = db.query(models.Item).filter(models.Item.id.in_(expanded_ids)).all()
+    items = db.query(models.Item).filter(models.Item.id.in_(expanded_ids)).order_by(models.Item.id).with_for_update().all()
     items_by_id = {item.id: item for item in items}
     missing_ids = set(expanded_ids) - set(items_by_id)
     if missing_ids:
@@ -282,7 +275,7 @@ def upload_photo(
         details=f"Loan {loan_id}, locker: {locker}",
     ))
     db.commit()
-    return {"message": "Photo uploaded", "path": path}
+    return {"message": "Photo uploaded", "path": path, "loan": schemas.LoanOut.model_validate(loan)}
 
 
 # ---------------------------------------------------------------------------
@@ -319,10 +312,7 @@ def return_loan(
     loan.status = "returned"
     loan.returned_at = datetime.utcnow()
 
-    for item_id in loan.item_ids:
-        item = db.query(models.Item).filter(models.Item.id == item_id).first()
-        if item:
-            item.available = True
+    set_items_available(db, loan.item_ids, True)
 
     db.add(models.AuditLog(
         user_id=current_user.id,
@@ -330,7 +320,7 @@ def return_loan(
         details=f"Loan {loan_id}",
     ))
     db.commit()
-    return {"message": "Return logged", "returned_at": loan.returned_at}
+    return {"message": "Return logged", "returned_at": loan.returned_at, "loan": schemas.LoanOut.model_validate(loan)}
 
 
 # ---------------------------------------------------------------------------
@@ -343,6 +333,7 @@ def my_loans(
 ):
     return (
         db.query(models.Loan)
+        .options(selectinload(models.Loan.photos))
         .filter(models.Loan.user_id == current_user.id)
         .order_by(models.Loan.created_at.desc())
         .all()
@@ -401,18 +392,12 @@ def admin_toggle_return(
         # Mark as not returned — reopen as active, items go back to unavailable
         loan.status = "active"
         loan.returned_at = None
-        for item_id in (loan.item_ids or []):
-            item = db.query(models.Item).filter(models.Item.id == item_id).first()
-            if item:
-                item.available = False
+        set_items_available(db, loan.item_ids, False)
         action = "admin_marked_not_returned"
     elif loan.status == "active":
         loan.status = "returned"
         loan.returned_at = datetime.utcnow()
-        for item_id in (loan.item_ids or []):
-            item = db.query(models.Item).filter(models.Item.id == item_id).first()
-            if item:
-                item.available = True
+        set_items_available(db, loan.item_ids, True)
         action = "admin_marked_returned"
     else:
         raise HTTPException(status_code=400, detail=f"Cannot toggle return from status '{loan.status}'")
@@ -435,14 +420,11 @@ def run_twall_autoclose(db: Session, triggered_by: int | None = None) -> list[in
         models.Loan.created_at <= cutoff,
     ).all()
 
+    set_items_available(db, [item_id for loan in loans for item_id in (loan.item_ids or [])], True)
     closed = []
     for loan in loans:
         loan.status = "returned"
         loan.returned_at = datetime.utcnow()
-        for item_id in (loan.item_ids or []):
-            item = db.query(models.Item).filter(models.Item.id == item_id).first()
-            if item:
-                item.available = True
         db.add(models.AuditLog(
             user_id=triggered_by,
             action="twall_autoclosed",

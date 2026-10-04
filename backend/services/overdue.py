@@ -1,7 +1,7 @@
 """Overdue-loan reminder workflow shared by admin endpoints."""
 
 from datetime import datetime
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 import models
 from mailer import send_overdue_notice
@@ -15,18 +15,22 @@ def item_label(item: models.Item) -> str:
 
 def send_overdue_reminders(db: Session, triggered_by: int) -> list[dict]:
     """Email one consolidated reminder per borrower with an overdue loan."""
-    overdue_loans = db.query(models.Loan).filter(
+    overdue_loans = db.query(models.Loan).options(joinedload(models.Loan.user)).filter(
         models.Loan.status == "active",
         models.Loan.due_date < datetime.utcnow(),
     ).all()
 
+    item_ids = {item_id for loan in overdue_loans for item_id in (loan.item_ids or [])}
+    items_by_id = {
+        item.id: item for item in db.query(models.Item).filter(models.Item.id.in_(item_ids)).all()
+    } if item_ids else {}
     reminders: dict[int, dict] = {}
     for loan in overdue_loans:
-        user = db.get(models.User, loan.user_id)
+        user = loan.user
         if not user:
             continue
         reminder = reminders.setdefault(user.id, {"user": user, "items": [], "loan_ids": []})
-        items = db.query(models.Item).filter(models.Item.id.in_(loan.item_ids or [])).all()
+        items = [items_by_id[item_id] for item_id in dict.fromkeys(loan.item_ids or []) if item_id in items_by_id]
         reminder["items"].extend(item_label(item) for item in items)
         reminder["loan_ids"].append(loan.id)
 

@@ -10,6 +10,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from sqlalchemy import text
 import os
 import logging
+from middleware import PerformanceMiddleware
 
 load_dotenv()
 
@@ -34,6 +35,7 @@ with engine.begin() as connection:
     connection.execute(text("UPDATE loans SET status = 'active' WHERE status = 'pending_verification'"))
 
 app = FastAPI(title="Gear Renting API", version="1.0.0")
+app.add_middleware(PerformanceMiddleware)
 
 app.add_middleware(
     CORSMiddleware,

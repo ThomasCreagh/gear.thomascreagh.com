@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload, selectinload
 from typing import List
 import secrets
 
@@ -8,6 +8,7 @@ import models, schemas
 from auth import get_admin_user, hash_password
 from mailer import send_account_created
 from services.overdue import send_overdue_reminders
+from services.inventory import latest_locker_codes
 from services.users import find_user_by_email, normalise_email
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -100,14 +101,18 @@ def reset_password(user_id: int, db: Session = Depends(get_db), admin: models.Us
 
 @router.get("/loans")
 def list_loans(active_only: bool = False, db: Session = Depends(get_db), admin: models.User = Depends(get_admin_user)):
-    q = db.query(models.Loan)
+    q = db.query(models.Loan).options(joinedload(models.Loan.user), selectinload(models.Loan.photos))
     if active_only:
         q = q.filter(models.Loan.status.in_(["pending_review", "active"]))
     loans = q.order_by(models.Loan.created_at.desc()).all()
+    item_ids = {item_id for loan in loans for item_id in (loan.item_ids or [])}
+    items_by_id = {
+        item.id: item for item in db.query(models.Item).filter(models.Item.id.in_(item_ids)).all()
+    } if item_ids else {}
     result = []
     for loan in loans:
-        user = db.query(models.User).get(loan.user_id)
-        items = [db.query(models.Item).get(i) for i in loan.item_ids]
+        user = loan.user
+        items = [items_by_id.get(i) for i in (loan.item_ids or [])]
         result.append({
             "id": loan.id,
             "user_email": user.email if user else "?",
@@ -153,8 +158,10 @@ def update_locker_code(update: schemas.LockerCodeUpdate, db: Session = Depends(g
 @router.get("/locker-code")
 def get_locker_codes(db: Session = Depends(get_db), admin: models.User = Depends(get_admin_user)):
     result = {}
-    for locker in tuple(locker for locker in models.LOCKERS if locker != "pad") + ("twall_door",):
-        row = db.query(models.LockerCode).filter(models.LockerCode.locker == locker).order_by(models.LockerCode.id.desc()).first()
+    lockers = tuple(locker for locker in models.LOCKERS if locker != "pad") + ("twall_door",)
+    codes = latest_locker_codes(db, lockers)
+    for locker in lockers:
+        row = codes.get(locker)
         result[locker] = {"code": row.code if row else None, "updated_at": row.updated_at if row else None}
     return result
 

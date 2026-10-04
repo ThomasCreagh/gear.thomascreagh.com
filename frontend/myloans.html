@@ -283,20 +283,21 @@
   let allLoans = [];
   let gearGroups = [];
   let editState  = {};   // loanId → { item_ids }
-  let pendingNewLoanId    = null;   // loan just created, awaiting modal close
 
   // ── Init ──────────────────────────────────────────────────────────────────
   async function init() {
     try {
-      const me = await getMe();
-      if (me.is_approved) document.getElementById("start-loan-btn").style.display = "inline-block";
       // Older deployments may not have the optional groups route yet; loans
       // should still load while that backend is being restarted/migrated.
-      [allLoans, allItems, gearGroups] = await Promise.all([
+      // Each endpoint checks authorization, so these need not wait for /auth/me.
+      const [me, loans, items, groups] = await Promise.all([
+        getMe(),
         apiFetch("/loans/my"),
         apiFetch("/items"),
         apiFetch("/items/groups").catch(() => []),
       ]);
+      [allLoans, allItems, gearGroups] = [loans, items, groups];
+      if (me.is_approved) document.getElementById("start-loan-btn").style.display = "inline-block";
       render();
     } catch (e) { showError(document.getElementById("error"), e.message); }
   }
@@ -553,7 +554,6 @@
 
   function closeStartModal() {
     document.getElementById("start-modal").classList.remove("open");
-    if (pendingNewLoanId) { pendingNewLoanId = null; reload(); }
   }
 
   function toggleLocker(el) {
@@ -601,7 +601,7 @@
         method:"POST",
         body: JSON.stringify({ lockers: selected, days, start_date, loan_type: isTwall ? "twall" : "standard" })
       });
-      pendingNewLoanId = loan.id;
+      applyLoan(loan);
       document.getElementById("modal-step-twall").style.display   = "none";
       document.getElementById("modal-step-lockers").style.display = "none";
 
@@ -618,7 +618,6 @@
           document.getElementById("modal-door-code-row").style.display = "block";
         }
       }
-      await reload();
     } catch (e) { showError(errEl, e.message); }
   }
 
@@ -679,8 +678,8 @@
 
   async function addGearGroup(loanId, groupId) {
     try {
-      await apiFetch(`/loans/${loanId}/gear-groups/${groupId}`, { method: "POST" });
-      await reload();
+      const loan = await apiFetch(`/loans/${loanId}/gear-groups/${groupId}`, { method: "POST" });
+      applyLoan(loan);
     } catch (e) { showError(document.getElementById("error"), e.message); }
   }
 
@@ -715,13 +714,13 @@
     if (!es) return;
 
     try {
-      await apiFetch(`/loans/${loanId}`, {
+      const loan = await apiFetch(`/loans/${loanId}`, {
         method: "PUT",
         body: JSON.stringify({ item_ids: es.item_ids })
       });
 
       delete editState[loanId];
-      await reload();
+      applyLoan(loan);
     } catch (e) {
       showError(document.getElementById("error"), e.message);
     }
@@ -734,8 +733,9 @@
     const fd = new FormData();
     fd.append("locker", locker); fd.append("photo_type", photoType); fd.append("photo", file);
     try {
-      await apiFetch(`/loans/${loanId}/photos`, { method:"POST", body: fd });
-      await reload();
+      const result = await apiFetch(`/loans/${loanId}/photos`, { method:"POST", body: fd });
+      if (result.loan) applyLoan(result.loan);
+      else await reload();
     } catch (e) { showError(document.getElementById("error"), e.message); }
   }
 
@@ -748,11 +748,26 @@
       const result = await apiFetch(`/loans/${loanId}/return`, { method:"POST" });
       suc.textContent = `✓ Return logged at ${new Date(result.returned_at).toLocaleString()}. Thanks!`;
       suc.style.display = "block";
-      await reload();
+      if (result.loan) applyLoan(result.loan);
+      else await reload();
     } catch (e) { showError(err, e.message); }
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
+  function applyLoan(loan) {
+    const previous = allLoans.find(entry => entry.id === loan.id);
+    const previouslyTaken = new Set(previous?.status === "active" ? previous.item_ids : []);
+    const nowTaken = new Set(loan.status === "active" ? loan.item_ids : []);
+    for (const item of allItems) {
+      if (nowTaken.has(item.id)) item.available = false;
+      else if (previouslyTaken.has(item.id)) item.available = true;
+    }
+    if (previous) allLoans = allLoans.map(entry => entry.id === loan.id ? loan : entry);
+    else allLoans.unshift(loan);
+    render();
+  }
+
+  // Compatibility fallback while frontend and backend versions are rolling out.
   async function reload() {
     [allLoans, allItems, gearGroups] = await Promise.all([
       apiFetch("/loans/my"),
