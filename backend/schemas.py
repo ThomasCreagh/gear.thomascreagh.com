@@ -91,6 +91,7 @@ class GearGroupCreate(BaseModel):
 class GearGroupOut(BaseModel):
     id: int
     name: str
+    image_path: Optional[str] = None
     item_ids: List[int]
     group_ids: List[int] = []
 

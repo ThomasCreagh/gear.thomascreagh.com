@@ -109,7 +109,7 @@
     <label>Description</label>
     <input type="text" id="edit-desc">
     <label>Gear photo</label>
-    <input type="file" id="edit-image" accept="image/jpeg,image/png,image/webp,image/gif">
+    <input type="file" id="edit-image" accept="image/jpeg,image/png,image/webp,image/gif" onclick="return choosePhotoSource(this)">
     <label>Category</label>
     <select id="edit-category">
       <option value="">— None —</option>
@@ -220,7 +220,7 @@
         </div>
         <div class="form-group">
           <label>Gear photo</label>
-          <input type="file" id="new-item-image" accept="image/jpeg,image/png,image/webp,image/gif">
+          <input type="file" id="new-item-image" accept="image/jpeg,image/png,image/webp,image/gif" onclick="return choosePhotoSource(this)">
         </div>
         <div class="form-group">
           <label>Category</label>
@@ -294,6 +294,8 @@
       <h2>Create Gear Group</h2>
       <label>Group name</label>
       <input type="text" id="new-group-name" placeholder="e.g. Trad Rack">
+      <label>Group photo <span style="font-size:0.75rem;color:var(--muted);font-weight:normal">(optional)</span></label>
+      <input type="file" id="new-group-image" accept="image/jpeg,image/png,image/webp,image/gif" onclick="return choosePhotoSource(this)">
       <label>Items in this group</label>
       <div id="group-item-options" style="max-height:280px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius);padding:0.5rem"></div>
       <label style="display:block;margin-top:0.75rem">Sub-groups (optional)</label>
@@ -303,7 +305,7 @@
     </div>
     <div class="card">
       <table>
-        <thead><tr><th>Name</th><th>Included tags</th><th></th></tr></thead>
+        <thead><tr><th>Name</th><th>Included tags</th><th>Photo</th><th></th></tr></thead>
         <tbody id="groups-table"></tbody>
       </table>
     </div>
@@ -567,7 +569,7 @@
         <td data-label="Photo">
           ${i.image_path ? `<img src="/uploads/${i.image_path}" alt="${i.name}" style="width:42px;height:42px;object-fit:cover;border-radius:4px;display:block;margin-bottom:0.25rem">` : ''}
           <label class="btn btn-sm btn-secondary" style="cursor:pointer">${i.image_path ? 'Replace' : 'Upload'}
-            <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" style="display:none" onchange="handleItemImageUpload(${i.id}, this)">
+            <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" style="display:none" onclick="return choosePhotoSource(this)" onchange="handleItemImageUpload(${i.id}, this)">
           </label>
         </td>
         <td>
@@ -615,7 +617,7 @@
       // Keep the admin gear/users/loans tabs usable while an older backend is
       // being restarted or has not deployed the optional groups route.
       gearGroups = [];
-      document.getElementById("groups-table").innerHTML = '<tr><td colspan="3" style="color:var(--muted)">Gear groups are temporarily unavailable.</td></tr>';
+      document.getElementById("groups-table").innerHTML = '<tr><td colspan="4" style="color:var(--muted)">Gear groups are temporarily unavailable.</td></tr>';
       renderGroupItemOptions();
       return;
     }
@@ -623,11 +625,17 @@
       <tr>
         <td data-label="Name"><strong>${group.name}</strong></td>
         <td data-label="Included tags">${group.item_ids.map(groupItemLabel).concat((group.group_ids || []).map(id => `⛺ ${gearGroups.find(g => g.id === id)?.name || `Group #${id}`}`)).join(", ")}</td>
+        <td data-label="Photo">
+          ${group.image_path ? `<img src="/uploads/${group.image_path}" alt="${group.name}" style="width:42px;height:42px;object-fit:cover;border-radius:4px;display:block;margin-bottom:0.25rem">` : ''}
+          <label class="btn btn-sm btn-secondary" style="cursor:pointer">${group.image_path ? 'Replace' : 'Upload'}
+            <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" style="display:none" onclick="return choosePhotoSource(this)" onchange="handleGroupImageUpload(${group.id}, this)">
+          </label>
+        </td>
         <td>
           <button class="btn btn-sm btn-primary" onclick="editGearGroup(${group.id})">Edit</button>
           <button class="btn btn-sm btn-danger" onclick="deleteGearGroup(${group.id})">Delete</button>
         </td>
-      </tr>`).join("") || '<tr><td colspan="3" style="color:var(--muted)">No gear groups yet.</td></tr>';
+      </tr>`).join("") || '<tr><td colspan="4" style="color:var(--muted)">No gear groups yet.</td></tr>';
     renderItemGroupTags();
     renderGroupItemOptions();
   }
@@ -647,13 +655,15 @@
     const name = document.getElementById("new-group-name").value.trim();
     const item_ids = [...document.querySelectorAll('input[name="group-item"]:checked')].map(input => Number(input.value));
     const group_ids = [...document.querySelectorAll('input[name="group-group"]:checked')].map(input => Number(input.value));
+    const image = document.getElementById("new-group-image").files[0];
     if (!name) return msg("A group name is required.", true);
     if (!item_ids.length && !group_ids.length) return msg("Select at least one item or sub-group.", true);
     try {
       const isEditing = Boolean(editingGroupId);
       const path = isEditing ? `/items/groups/${editingGroupId}` : "/items/groups";
       const method = isEditing ? "PUT" : "POST";
-      await apiFetch(path, { method, body: JSON.stringify({ name, item_ids, group_ids }) });
+      const group = await apiFetch(path, { method, body: JSON.stringify({ name, item_ids, group_ids }) });
+      if (image) await uploadGroupImage(group.id, image);
       cancelGearGroupEdit();
       await loadGearGroups();
       msg(`✓ Gear group ${isEditing ? 'updated' : 'created'}.`);
@@ -665,6 +675,7 @@
     if (!group) return;
     editingGroupId = id;
     document.getElementById("new-group-name").value = group.name;
+    document.getElementById("new-group-image").value = "";
     renderGroupItemOptions();
     document.querySelectorAll('input[name="group-item"]').forEach(input => {
       input.checked = group.item_ids.includes(Number(input.value));
@@ -680,6 +691,7 @@
   function cancelGearGroupEdit() {
     editingGroupId = null;
     document.getElementById("new-group-name").value = "";
+    document.getElementById("new-group-image").value = "";
     renderGroupItemOptions();
     document.getElementById("save-group-btn").textContent = "Create Group";
     document.getElementById("cancel-group-edit-btn").style.display = "none";
@@ -692,6 +704,22 @@
       await apiFetch(`/items/groups/${id}`, { method: "DELETE" });
       await loadGearGroups();
       msg("✓ Gear group deleted.");
+    } catch (e) { msg(e.message, true); }
+  }
+
+  async function uploadGroupImage(groupId, image) {
+    const body = new FormData();
+    body.append("image", image);
+    await apiFetch(`/items/groups/${groupId}/image`, { method: "POST", body });
+  }
+
+  async function handleGroupImageUpload(groupId, input) {
+    const image = input.files[0];
+    if (!image) return;
+    try {
+      await uploadGroupImage(groupId, image);
+      msg("✓ Gear group image uploaded.");
+      await loadGearGroups();
     } catch (e) { msg(e.message, true); }
   }
 

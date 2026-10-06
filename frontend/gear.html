@@ -164,6 +164,7 @@
     const itemLabels = groupItems.map(item => `${item.tag ? '#' + item.tag + ' ' : ''}${item.name}`).join(", ");
     return `
       <div class="item-card gear-group-card">
+        ${group.image_path ? `<img class="gear-photo" src="/uploads/${group.image_path}" alt="${group.name}" loading="lazy" decoding="async" fetchpriority="low">` : ''}
         <div style="display:flex;justify-content:space-between;align-items:center">
           <h3>⛺ ${group.name}</h3>
           <span class="badge ${isAvailable ? 'badge-green' : 'badge-red'}">${isAvailable ? 'Available' : 'Partly out'}</span>

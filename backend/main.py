@@ -29,6 +29,7 @@ with engine.begin() as connection:
     connection.execute(text("ALTER TABLE loans ADD COLUMN IF NOT EXISTS door_code VARCHAR"))
     connection.execute(text("ALTER TABLE loans ADD COLUMN IF NOT EXISTS locker_codes JSONB"))
     connection.execute(text("ALTER TABLE loans ADD COLUMN IF NOT EXISTS start_date TIMESTAMP"))
+    connection.execute(text("ALTER TABLE gear_groups ADD COLUMN IF NOT EXISTS image_path VARCHAR"))
     connection.execute(text("ALTER TABLE gear_groups ADD COLUMN IF NOT EXISTS group_ids JSONB NOT NULL DEFAULT '[]'::jsonb"))
     # Loans created before the trust-based flow used this intermediate state.
     # They no longer need a locker verification step.

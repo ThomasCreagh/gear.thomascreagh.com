@@ -55,6 +55,26 @@ def validate_group_ids(group_ids: List[int], db: Session, current_id: int | None
     return unique_ids
 
 
+@router.post("/groups/{group_id}/image", response_model=schemas.GearGroupOut)
+def upload_group_image(group_id: int, image: UploadFile = File(...), db: Session = Depends(get_db), admin: models.User = Depends(get_admin_user)):
+    group = db.get(models.GearGroup, group_id)
+    if not group:
+        raise HTTPException(status_code=404, detail="Gear group not found")
+    if image.content_type not in ALLOWED_IMAGE_TYPES:
+        raise HTTPException(status_code=400, detail="Upload a JPEG, PNG, WebP, or GIF image")
+    ext = os.path.splitext(image.filename or "")[1].lower() or ".jpg"
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    filename = f"gear-group-{uuid.uuid4()}{ext}"
+    path = os.path.join(UPLOAD_DIR, filename)
+    with open(path, "wb") as destination:
+        shutil.copyfileobj(image.file, destination)
+    group.image_path = filename
+    db.add(models.AuditLog(user_id=admin.id, action="gear_group_image_uploaded", details=f"Gear group {group_id}"))
+    db.commit()
+    db.refresh(group)
+    return group
+
+
 @router.get("/groups", response_model=List[schemas.GearGroupOut])
 def list_gear_groups(db: Session = Depends(get_db), current_user: models.User = Depends(get_approved_user)):
     return db.query(models.GearGroup).order_by(models.GearGroup.name).all()

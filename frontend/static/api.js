@@ -66,3 +66,55 @@ function showError(el, msg) {
   el.textContent = msg;
   el.style.display = "block";
 }
+
+// File pickers default to the gallery on some phones. Offer an explicit source
+// choice before opening a photo input, while leaving desktop file pickers alone.
+function choosePhotoSource(input) {
+  if (input.dataset.photoSourceReady === "true") {
+    delete input.dataset.photoSourceReady;
+    return true;
+  }
+
+  let picker = document.getElementById("photo-source-picker");
+  if (!picker) {
+    picker = document.createElement("div");
+    picker.id = "photo-source-picker";
+    picker.setAttribute("role", "dialog");
+    picker.setAttribute("aria-modal", "true");
+    picker.setAttribute("aria-label", "Choose photo source");
+    picker.style.cssText = "display:none;position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.5);align-items:center;justify-content:center;padding:1rem";
+    picker.innerHTML = `
+      <div style="width:min(360px,100%);background:#fff;border-radius:8px;padding:1.25rem;box-shadow:0 8px 24px rgba(0,0,0,.25)">
+        <h2 style="margin:0 0 .5rem">Add a photo</h2>
+        <p style="margin:0 0 1rem;color:#666">Where would you like to get it from?</p>
+        <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+          <button type="button" class="btn btn-primary" onclick="openPhotoSource(true)">Take a picture</button>
+          <button type="button" class="btn btn-secondary" onclick="openPhotoSource(false)">Choose from gallery</button>
+          <button type="button" class="btn" onclick="closePhotoSource()">Cancel</button>
+        </div>
+      </div>`;
+    document.body.appendChild(picker);
+  }
+  picker.photoInput = input;
+  picker.style.display = "flex";
+  return false;
+}
+
+function openPhotoSource(useCamera) {
+  const picker = document.getElementById("photo-source-picker");
+  const input = picker?.photoInput;
+  closePhotoSource();
+  if (!input) return;
+  if (useCamera) input.setAttribute("capture", "environment");
+  else input.removeAttribute("capture");
+  input.dataset.photoSourceReady = "true";
+  input.click();
+}
+
+function closePhotoSource() {
+  const picker = document.getElementById("photo-source-picker");
+  if (picker) {
+    picker.style.display = "none";
+    picker.photoInput = null;
+  }
+}

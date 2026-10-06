@@ -58,6 +58,8 @@ class GearGroup(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False, unique=True)
+    # Admin-uploaded reference photo, shown alongside the group in the catalogue.
+    image_path = Column(String)
     item_ids = Column(JSON, nullable=False, default=list)
     group_ids = Column(JSON, nullable=False, default=list)
     created_at = Column(DateTime, default=datetime.utcnow)

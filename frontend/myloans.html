@@ -441,7 +441,7 @@
                  ? `<span class="badge badge-green">Uploaded ✓</span>`
                  : `<p style="font-size:0.75rem;color:var(--danger);margin-bottom:0.4rem">Required before confirming return</p>
                     <label class="btn btn-sm btn-secondary" style="cursor:pointer">Upload
-                      <input type="file" accept="image/*" style="display:none" onchange="uploadPhoto(${loan.id},'${locker}','return',this)">
+                      <input type="file" accept="image/*" style="display:none" onclick="return choosePhotoSource(this)" onchange="uploadPhoto(${loan.id},'${locker}','return',this)">
                     </label>`}
              </div>`;
            }).join("")}
