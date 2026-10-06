@@ -568,8 +568,8 @@
         }</td>
         <td data-label="Photo">
           ${i.image_path ? `<img src="/uploads/${i.image_path}" alt="${i.name}" style="width:42px;height:42px;object-fit:cover;border-radius:4px;display:block;margin-bottom:0.25rem">` : ''}
-          <label class="btn btn-sm btn-secondary" style="cursor:pointer">${i.image_path ? 'Replace' : 'Upload'}
-            <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" style="display:none" onclick="return choosePhotoSource(this)" onchange="handleItemImageUpload(${i.id}, this)">
+          <label class="btn btn-sm btn-secondary" style="cursor:pointer" onclick="event.preventDefault(); event.stopPropagation(); return choosePhotoSource(this.querySelector('input'))">${i.image_path ? 'Replace' : 'Upload'}
+            <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" style="display:none" onclick="event.stopPropagation()" onchange="handleItemImageUpload(${i.id}, this)">
           </label>
         </td>
         <td>
@@ -627,8 +627,8 @@
         <td data-label="Included tags">${group.item_ids.map(groupItemLabel).concat((group.group_ids || []).map(id => `⛺ ${gearGroups.find(g => g.id === id)?.name || `Group #${id}`}`)).join(", ")}</td>
         <td data-label="Photo">
           ${group.image_path ? `<img src="/uploads/${group.image_path}" alt="${group.name}" style="width:42px;height:42px;object-fit:cover;border-radius:4px;display:block;margin-bottom:0.25rem">` : ''}
-          <label class="btn btn-sm btn-secondary" style="cursor:pointer">${group.image_path ? 'Replace' : 'Upload'}
-            <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" style="display:none" onclick="return choosePhotoSource(this)" onchange="handleGroupImageUpload(${group.id}, this)">
+          <label class="btn btn-sm btn-secondary" style="cursor:pointer" onclick="event.preventDefault(); event.stopPropagation(); return choosePhotoSource(this.querySelector('input'))">${group.image_path ? 'Replace' : 'Upload'}
+            <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" style="display:none" onclick="event.stopPropagation()" onchange="handleGroupImageUpload(${group.id}, this)">
           </label>
         </td>
         <td>
